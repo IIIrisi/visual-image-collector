@@ -1,0 +1,93 @@
+{
+  "manifest_version": 3,
+  "name": "🌟 审美图采集助手",
+  "version": "1.8.10",
+  "description": "自动识别花瓣、Pinterest、站酷、小红书和 Behance，选择图片与视频、跨页面去重并批量下载",
+  "permissions": ["activeTab", "storage", "downloads", "sidePanel"],
+  "host_permissions": [
+    "https://huaban.com/*",
+    "https://gd-hbimg-edge.huaban.com/*",
+    "https://gd-hbimg-other.huaban.com/*",
+    "https://*.huaban.com/*"
+    ,"https://*.pinterest.com/*"
+    ,"https://i.pinimg.com/*"
+    ,"https://www.zcool.com.cn/*"
+    ,"https://img.zcool.cn/*"
+    ,"https://*.zcool.cn/*"
+    ,"https://www.xiaohongshu.com/*"
+    ,"https://*.xhscdn.com/*"
+    ,"https://*.xhscdn.net/*"
+    ,"https://www.behance.net/*"
+    ,"https://mir-s3-cdn-cf.behance.net/*"
+    ,"https://player.vimeo.com/*"
+    ,"https://*.vimeocdn.com/*"
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://huaban.com/*"],
+      "js": ["url-watcher.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://huaban.com/*"],
+      "js": ["filter-engine.js", "content.js"],
+      "css": ["styles/overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.pinterest.com/*"],
+      "js": ["filter-engine.js", "pinterest-content.js"],
+      "css": ["styles/overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.zcool.com.cn/*"],
+      "js": ["filter-engine.js", "zcool-content.js"],
+      "css": ["styles/overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.xiaohongshu.com/*"],
+      "js": ["xhs-inject.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://www.xiaohongshu.com/*"],
+      "js": ["xhs-content.js"],
+      "css": ["styles/overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.behance.net/*"],
+      "js": ["behance-content.js"],
+      "css": ["styles/overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js"],
+      "matches": ["https://huaban.com/*"]
+    }
+  ]
+}

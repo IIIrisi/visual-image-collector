@@ -1,0 +1,30 @@
+{
+  "name": "huaban-downloader",
+  "version": "1.8.10",
+  "private": true,
+  "description": "Public-release tooling for the Huaban Downloader Chrome extension",
+  "scripts": {
+    "verify": "node scripts/verify.mjs && node --test tests/*.test.mjs"
+  },
+  "releaseConfig": {
+    "allowedHosts": [
+      "https://huaban.com/*",
+      "https://gd-hbimg-edge.huaban.com/*",
+      "https://gd-hbimg-other.huaban.com/*",
+      "https://*.huaban.com/*"
+      ,"https://*.pinterest.com/*"
+      ,"https://i.pinimg.com/*"
+      ,"https://www.zcool.com.cn/*"
+      ,"https://img.zcool.cn/*"
+      ,"https://*.zcool.cn/*"
+      ,"https://www.xiaohongshu.com/*"
+      ,"https://*.xhscdn.com/*"
+      ,"https://*.xhscdn.net/*"
+      ,"https://www.behance.net/*"
+      ,"https://mir-s3-cdn-cf.behance.net/*"
+      ,"https://player.vimeo.com/*"
+      ,"https://*.vimeocdn.com/*"
+    ]
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,101 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --ink: #171820;
+  --muted: #747887;
+  --line: #eceef2;
+  --panel: #fff;
+  --primary: #ff7694;
+  --primary-deep: #ff7694;
+}
+
+body {
+  width: 100%;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow-x: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  background: #fff;
+}
+
+button { font: inherit; cursor: pointer; transition: transform .15s ease, filter .15s ease, background .15s ease; }
+button:active { transform: scale(.985); }
+
+.app-header {
+  padding: 22px 22px 20px;
+  color: var(--ink);
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+.brand-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 650; }
+.brand-icon { width: 38px; height: 38px; border-radius: 12px; object-fit: cover; }
+.page-type { min-height: 17px; margin-top: 17px; color: #676b75; font-size: 12px; }
+.page-type:before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 4px rgba(255,118,148,.13); vertical-align: 1px; }
+
+.app-body { display: grid; min-height: calc(100vh - 117px); align-content: start; gap: 11px; padding: 15px 15px 64px; background: #fff; }
+.panel { padding: 15px 16px; border: 1px solid var(--line); border-radius: 17px; background: var(--panel); box-shadow: none; }
+.panel-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.panel-title { font-size: 14px; font-weight: 650; }
+.filter-note { margin-top: 5px; color: var(--muted); font-size: 11px; }
+.filter-summary { margin-top: 7px; color: #9a9eaa; font-size: 10px; }
+.filter-summary { display: flex; flex-wrap: wrap; gap: 5px 10px; }
+.filter-stat { display: inline-flex; align-items: center; white-space: nowrap; }
+.filter-dot { width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; flex: 0 0 auto; }
+.filter-dot-normal { background: #22c55e; }
+.filter-dot-suspicious { background: #f59e0b; }
+.filter-dot-rejected { background: #ef4444; }
+.filter-dot-manual { background: #6b7280; }
+.panel.is-disabled { opacity: .48; }
+
+.switch { position: relative; width: 42px; height: 24px; flex: 0 0 auto; }
+.switch input { position: absolute; opacity: 0; inset: 0; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: #d8dae2; cursor: pointer; transition: .2s; }
+.switch span:after { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(30,32,45,.18); transition: .2s; }
+.switch input:checked + span { background: var(--primary); }
+.switch input:checked + span:after { transform: translateX(18px); }
+
+.btn-group { display: flex; gap: 8px; }
+.btn { min-height: 40px; padding: 0 9px; border: 0; border-radius: 11px; color: #fff; font-size: 12px; font-weight: 650; line-height: 1.2; }
+.btn-group .btn { flex: 1 1 0; width: 0; height: 40px; }
+.btn:disabled { cursor: not-allowed; opacity: .52; }
+.btn-primary, .btn-download, .btn-green, .btn-red { background: var(--primary); box-shadow: none; }
+.btn-gray { color: #8d919b; background: #f1f2f5; }
+.btn:hover:not(:disabled) { filter: brightness(1.04); }
+.work-selection-toggle { min-height: 30px; border: 1px solid #e4e6eb; border-radius: 9px; color: #747887; background: #fff; font-size: 10px; cursor: pointer; }
+.work-selection-toggle:hover { border-color: var(--primary); color: var(--primary); }
+
+.progress-section { padding: 2px 3px 0; }
+.progress-bar { height: 4px; overflow: hidden; border-radius: 999px; background: #eceef2; }
+.progress-fill { width: 0; height: 100%; border-radius: inherit; background: var(--primary); transition: width .3s ease; }
+.progress-text { margin-top: 5px; color: #696d7a; text-align: center; font-size: 11px; }
+.force-reset { margin-top: 5px; color: #a0a3ad; text-align: center; font-size: 10px; }
+.force-reset a { color: #ef5c6a; text-decoration: none; }
+
+.metrics { display: flex; flex-direction: row; align-items: stretch; width: 100%; padding: 8px 2px 3px; }
+.metric { flex: 1; display: flex; flex-direction: column; gap: 3px; align-items: center; color: var(--muted); font-size: 10px; }
+.metric + .metric { border-left: 1px solid var(--line); }
+.metric-number { color: var(--ink); font-size: 15px; font-weight: 650; }
+
+.work-list-section { padding: 2px 3px; }
+.work-list-title { margin-bottom: 6px; color: #a0a3ad; font-size: 10px; }
+.work-list { max-height: 105px; overflow-y: auto; }
+.work-item { display: flex; align-items: center; justify-content: space-between; padding: 5px 7px; border-radius: 7px; font-size: 11px; }
+.work-item:hover { background: #f6f7f9; }
+.work-item-title { max-width: 250px; overflow: hidden; color: #555a67; text-overflow: ellipsis; white-space: nowrap; }
+.work-item-count { color: #9a9eaa; white-space: nowrap; }
+
+.clear-group { display: flex; flex-direction: column; gap: 4px; }
+.btn-text { width: 100%; min-height: 30px; border: 1px dashed #dfe1e7; border-radius: 9px; color: #989ca7; background: transparent; font-size: 10px; font-weight: 500; }
+.btn-text:hover { border-color: var(--primary); color: var(--primary); }
+.btn-text-danger { color: #bbbfc8; }
+.btn-text-danger:hover { border-color: #ef5c6a; color: #ef5c6a; }
+.error-msg { padding: 8px; border: 1px solid #ffcbd0; border-radius: 9px; color: #d94a59; background: #fff2f4; text-align: center; font-size: 11px; }
+.app-footer { position: fixed; right: 0; bottom: 0; left: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; padding: 13px 17px; border-top: 1px solid var(--line); color: #9ca0ab; background: rgba(255,255,255,.98); font-size: 10px; }
+.app-footer > * { display: flex; align-items: center; min-height: 16px; line-height: 16px; }
+.footer-left { gap: 6px; }
+.footer-left i { color: #b8bbc3; font-style: normal; }
+.app-footer a { color: #858a96; text-decoration: none; }
+.app-footer a:hover { color: var(--primary); }

@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="styles/popup.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-row">
+      <div class="brand">
+        <img class="brand-icon" src="icons/icon128.png" alt="">
+        <span>🌟 审美图采集助手</span>
+      </div>
+    </div>
+    <div id="pageType" class="page-type"></div>
+  </header>
+
+  <main class="app-body">
+    <section class="panel plugin-switch-section">
+      <div class="panel-row">
+        <div>
+          <div class="panel-title">插件开关</div>
+          <div id="pluginStatusNote" class="filter-note">开启后在支持的网站识别并采集图片</div>
+        </div>
+        <label class="switch" aria-label="插件开关">
+          <input id="pluginEnabled" type="checkbox" checked>
+          <span></span>
+        </label>
+      </div>
+    </section>
+
+    <section id="filterSection" class="panel filter-section">
+      <div class="panel-row">
+        <div>
+          <div class="panel-title">智能过滤</div>
+          <div class="filter-note">排除版权素材、明显广告、透明素材</div>
+        </div>
+        <label class="switch" aria-label="智能过滤">
+          <input id="filterEnabled" type="checkbox">
+          <span></span>
+        </label>
+      </div>
+      <div id="filterSummary" class="filter-summary">等待扫描页面图片</div>
+    </section>
+
+    <div id="btnGroup" class="btn-group">
+      <button id="btnCollect" class="btn btn-primary" disabled>检测中...</button>
+      <button id="btnDownload" class="btn btn-download" style="display:none">下载到本地</button>
+      <button id="btnStop" class="btn btn-red" style="display:none">停止</button>
+    </div>
+    <button id="btnToggleWorkSelection" class="work-selection-toggle" style="display:none">取消选择此作品的全部图片</button>
+
+    <section id="progressSection" class="progress-section" style="display:none">
+      <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+      <div id="progressText" class="progress-text"></div>
+      <div id="forceReset" class="force-reset" style="display:none">任务卡住了？<a href="#" id="btnForceReset">点击强制重置</a></div>
+    </section>
+
+    <section id="statsSection" class="metrics" style="display:none">
+      <div class="metric"><span id="statImages" class="metric-number">0</span><span>待下载</span></div>
+      <div class="metric"><span id="statDups" class="metric-number">0</span><span>历史去重</span></div>
+      <div class="metric"><span id="statBoards" class="metric-number">0</span><span>来自画板</span></div>
+    </section>
+
+    <section id="boardListSection" class="work-list-section" style="display:none">
+      <div class="work-list-title">最近采集</div>
+      <div id="boardList" class="work-list"></div>
+    </section>
+
+    <div id="clearGroup" class="clear-group" style="display:none">
+      <button id="btnClearPending" class="btn btn-text">清空待下载</button>
+      <button id="btnClearAll" class="btn btn-text btn-text-danger">完全重置（清除去重历史）</button>
+    </div>
+
+    <div id="errorMsg" class="error-msg" style="display:none"></div>
+    <footer class="app-footer"><span class="footer-left"><span>by 五月和小麦🌾</span><i aria-hidden="true">|</i><a href="https://my.feishu.cn/share/base/form/shrcn8255GH50XpGieGHbjmDiab?from=navigation" target="_blank" rel="noopener noreferrer">问题反馈</a></span><span>V1.8.10</span></footer>
+  </main>
+
+  <script src="lib/jszip.min.js"></script>
+  <script src="lib/media-utils.js"></script>
+  <script src="lib/gif-encoder.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

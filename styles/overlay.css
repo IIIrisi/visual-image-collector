@@ -1,0 +1,180 @@
+/* ── Huaban Downloader 选中覆盖层样式 ── */
+
+html.huaban-dl-plugin-disabled .huaban-dl-overlay,
+html.huaban-dl-plugin-disabled .huaban-dl-badge,
+html.huaban-dl-plugin-disabled .zcool-dl-image-layer,
+html.huaban-dl-plugin-disabled .xhs-dl-image-layer,
+html.huaban-dl-plugin-disabled .huaban-dl-filter-reason,
+html.huaban-dl-plugin-disabled .huaban-dl-toast {
+  display: none !important;
+}
+
+/* Pin 卡片选中状态 */
+.huaban-dl-card {
+  position: relative !important;
+}
+
+.huaban-dl-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  pointer-events: none;
+  transition: all 0.2s ease;
+  border-radius: 8px;
+}
+
+/* 选中状态 */
+.huaban-dl-card.huaban-dl-selected .huaban-dl-overlay {
+  border: 3px solid #22c55e;
+  background: transparent;
+}
+
+/* 未选中状态 */
+.huaban-dl-card.huaban-dl-deselected .huaban-dl-overlay {
+  border: 3px solid transparent;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* 角标：选中勾 / 未选中叉 */
+.huaban-dl-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  color: #fff;
+  z-index: 1000;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  line-height: 1;
+  user-select: none;
+}
+
+.huaban-dl-selected .huaban-dl-badge {
+  background: #22c55e;
+}
+
+.huaban-dl-deselected .huaban-dl-badge {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.huaban-dl-card.huaban-dl-filter-suspicious .huaban-dl-overlay {
+  border: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.18);
+}
+.huaban-dl-card.huaban-dl-filter-rejected .huaban-dl-overlay {
+  border: 3px solid #ef4444;
+  background: rgba(239, 68, 68, 0.22);
+}
+.huaban-dl-filter-suspicious .huaban-dl-badge { background: #f59e0b; }
+.huaban-dl-filter-rejected .huaban-dl-badge { background: #ef4444; }
+.huaban-dl-filter-reason {
+  position: absolute; left: 7px; bottom: 7px; z-index: 1000;
+  border-radius: 4px; padding: 3px 6px; color: #fff; background: rgba(17,24,39,.82);
+  font: 11px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  pointer-events: none;
+}
+
+.huaban-dl-badge:hover {
+  transform: scale(1.2);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+/* 选框绑定在媒体容器内，交给浏览器同一合成层滚动，避免 fixed 浮层追帧抖动。 */
+.zcool-dl-overlay-host {
+  position: relative !important;
+}
+.zcool-dl-image-layer {
+  position: absolute;
+  /* 留在正文内容层，不压住站酷顶部导航和图片预览弹层。 */
+  z-index: 10;
+  box-sizing: border-box;
+  border-radius: 8px;
+  pointer-events: none;
+}
+.huaban-dl-card.huaban-dl-selected > .zcool-dl-image-layer {
+  border: 3px solid #22c55e;
+  background: transparent;
+}
+.huaban-dl-card.huaban-dl-deselected > .zcool-dl-image-layer {
+  border: 3px solid transparent;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* 小红书详情轮播：轮廓直接画在当前媒体上，和站点轮播共用合成层，滑动不拖影。 */
+.xhs-dl-direct-selected,
+.xhs-dl-direct-deselected {
+  outline: 3px solid transparent !important;
+  outline-offset: -3px !important;
+}
+.xhs-dl-direct-selected {
+  outline-color: #22c55e !important;
+  box-shadow: none !important;
+}
+.xhs-dl-direct-deselected {
+  box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.35) !important;
+}
+.xhs-dl-motion-hidden {
+  /* 轮播期间容器选框常驻，仅由脚本隐藏右下角勾选图标。 */
+}
+.xhs-dl-fixed-badge {
+  position: fixed !important;
+  z-index: 2147483001;
+}
+.xhs-dl-fixed-badge.is-selected { background: #22c55e; }
+.xhs-dl-fixed-badge.is-deselected { background: rgba(0, 0, 0, 0.5); }
+/* Live 勾选图标不放大，但 hover 鼠标与普通图片、视频保持一致。 */
+.xhs-dl-fixed-badge.is-live,
+.xhs-dl-fixed-badge.is-live:hover {
+  transform: none;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.xhs-dl-image-layer {
+  position: fixed;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  pointer-events: none;
+  border-radius: 2px;
+}
+.xhs-dl-image-layer.is-selected {
+  border: 3px solid #22c55e;
+  background: transparent;
+}
+.xhs-dl-image-layer.is-deselected {
+  border: 3px solid transparent;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* 采集进行中提示条 */
+.huaban-dl-toast {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 99999;
+  background: #e84c6a;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  transition: opacity 0.3s;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.huaban-dl-toast.huaban-dl-toast-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
