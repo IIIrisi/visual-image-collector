@@ -123,6 +123,15 @@ check(huabanScript.includes('var folderName = "审美图-" + getDateStr(download
 check(popupScript.includes('action: "REMOVE_BOARD_IMAGES"'), "ZCOOL pending-work withdrawal request is missing");
 check((await readFile(join(root, "background.js"), "utf8")).includes('msg.action === "REMOVE_BOARD_IMAGES"'), "pending-work withdrawal handler is missing");
 check(huabanScript.includes("manualDeselectedPins.has"), "Huaban manual gray-state override is missing");
+check(huabanScript.includes("manualSelectedPins") && !huabanScript.includes('filterResults.clear();\n      setSelectionMode("manual")'), "manual-mode selection memory or filtering is missing");
+check(popupScript.includes("可手动勾选内容") && !popupScript.includes("所有内容等待你手动勾选"), "manual-mode copy was not updated");
+check(zcoolScript.includes("record.elements") && zcoolScript.includes("canonicalMediaUrl(url)") && zcoolScript.includes("data-zcool-media"), "ZCOOL multi-instance selection synchronization is missing");
+for (const source of [huabanScript, pinterestScript, zcoolScript, xhsScript, behanceScript]) {
+  check(/manualSelected(?:Pins)?/.test(source), "manual selection memory is missing from a supported site");
+}
+check(huabanScript.includes('if (/^\\/discovery/.test(path)) return "home"'), "Huaban discovery homepage routing is missing");
+check(popupScript.includes("detectPageWithBootstrap") && popupScript.includes("chrome.scripting.executeScript"), "first-install content-script bootstrap is missing");
+check((manifest.permissions || []).includes("scripting"), "first-install content-script bootstrap permission is missing");
 check(huabanScript.includes("lastSelectionMessage"), "Huaban stable selection-count updates are missing");
 check(pinterestScript.includes("lastSelectionMessage"), "Pinterest stable selection-count updates are missing");
 check(huabanScript.includes('action: "PENDING_QUEUE_CHANGED"') && huabanScript.includes("removePendingPins([pid])"), "Huaban pending-queue deselection sync is missing");

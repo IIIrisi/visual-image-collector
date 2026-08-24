@@ -1,6 +1,6 @@
 {
   "name": "huaban-downloader",
-  "version": "1.8.10",
+  "version": "1.9.2",
   "private": true,
   "description": "Public-release tooling for the Huaban Downloader Chrome extension",
   "scripts": {

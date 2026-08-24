@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "🌟 审美图采集助手",
-  "version": "1.8.10",
+  "version": "1.9.2",
   "description": "自动识别花瓣、Pinterest、站酷、小红书和 Behance，选择图片与视频、跨页面去重并批量下载",
-  "permissions": ["activeTab", "storage", "downloads", "sidePanel"],
+  "permissions": ["activeTab", "storage", "downloads", "sidePanel", "scripting"],
   "host_permissions": [
     "https://huaban.com/*",
     "https://gd-hbimg-edge.huaban.com/*",

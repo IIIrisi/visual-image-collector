@@ -10,6 +10,8 @@
   var lastSelectionMessage = "";
   var manualDeselectedPins = new Set();
   var removedPendingPins = new Set();
+  var selectionMode = "auto";
+  var manualSelectedPins = new Set();
   function setPluginEnabled(enabled) {
     pluginEnabled = enabled !== false;
     document.documentElement.classList.toggle("huaban-dl-plugin-disabled", !pluginEnabled);
@@ -18,6 +20,9 @@
   chrome.storage.local.get(["aesthetic_collector_enabled"], function(data) {
     setPluginEnabled(data.aesthetic_collector_enabled !== false);
   });
+  chrome.storage.local.get(["aesthetic_selection_mode"], function(data) {
+    setSelectionMode(data.aesthetic_selection_mode === "manual" ? "manual" : "auto");
+  });
 
   chrome.storage.local.get(["huaban_filter_settings"], function(data) {
     filterEnabled = !data.huaban_filter_settings || data.huaban_filter_settings.enabled !== false;
@@ -25,6 +30,26 @@
 
   function safeSend(message) {
     try { chrome.runtime.sendMessage(message); } catch (_error) {}
+  }
+
+  function setSelectionMode(mode) {
+    selectionMode = mode === "manual" ? "manual" : "auto";
+    document.documentElement.classList.toggle("huaban-dl-manual-mode", selectionMode === "manual");
+    manualDeselectedPins.clear();
+    pins.forEach(function(record, id) {
+      var allowedByFilter = !(filterEnabled && record.promoted);
+      var choose = selectionMode === "manual" ? manualSelectedPins.has(id) && allowedByFilter : allowedByFilter;
+      selected.set(id, choose);
+      setAppearance(record);
+    });
+    if (selectionMode === "manual") {
+      var pending = [];
+      selected.forEach(function(choose, id) { if (!choose) pending.push(id); });
+      removePendingPins(pending); restorePendingPins(Array.from(manualSelectedPins));
+    }
+    else restorePendingPins(Array.from(pins.keys()));
+    lastSelectionMessage = "";
+    updateCount();
   }
 
   function removePendingPins(pinIds) {
@@ -120,21 +145,24 @@
         event.preventDefault(); event.stopPropagation();
         var choose = selected.get(record.id) === false;
         selected.set(record.id, choose);
-        if (choose) manualDeselectedPins.delete(record.id); else manualDeselectedPins.add(record.id);
+        if (selectionMode === "manual") {
+          if (choose) manualSelectedPins.add(record.id); else manualSelectedPins.delete(record.id);
+        } else if (choose) manualDeselectedPins.delete(record.id); else manualDeselectedPins.add(record.id);
         if (!choose) removePendingPins([record.id]);
         else restorePendingPins([record.id]);
         setAppearance(record); updateCount();
       });
       card.appendChild(badge);
     }
-    badge.textContent = selected.get(record.id) === false ? "\u2717" : "\u2713";
+    badge.textContent = selected.get(record.id) === false ? (selectionMode === "manual" ? "" : "\u2717") : "\u2713";
   }
 
   function updateCount() {
     var count = 0;
     selected.forEach(function(value) { if (value) count++; });
-    var manualCount = manualDeselectedPins.size;
-    var rejectedCount = Math.max(0, selected.size - count - manualCount);
+    var rejectedCount = 0;
+    if (filterEnabled) pins.forEach(function(record) { if (record.promoted) rejectedCount++; });
+    var manualCount = selectionMode === "manual" ? Math.max(0, selected.size - count - rejectedCount) : manualDeselectedPins.size;
     var signature = [count, selected.size, manualCount, rejectedCount].join(":");
     if (signature === lastSelectionMessage) return;
     lastSelectionMessage = signature;
@@ -158,7 +186,7 @@
       var record = { id: id, url: urls.original, fallbackUrl: urls.fallback, title: title, card: card, promoted: promoted,
         width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };
       pins.set(id, record);
-      if (!selected.has(id)) selected.set(id, !(filterEnabled && promoted));
+      if (!selected.has(id)) selected.set(id, selectionMode === "manual" ? manualSelectedPins.has(id) && !(filterEnabled && promoted) : !(filterEnabled && promoted));
       setAppearance(record);
     });
     updateCount();
@@ -253,13 +281,17 @@
       filterEnabled = !!(msg.settings && msg.settings.enabled);
       pins.forEach(function(record, id) {
         if (record.promoted) {
-          selected.set(id, !filterEnabled);
+          var choose = filterEnabled ? false : (selectionMode === "manual" ? manualSelectedPins.has(id) : true);
+          selected.set(id, choose);
           if (filterEnabled) removePendingPins([id]);
           else restorePendingPins([id]);
         }
         setAppearance(record);
       });
       updateCount(); sendResponse({ ok: true }); return;
+    }
+    if (msg.action === "UPDATE_SELECTION_MODE") {
+      setSelectionMode(msg.mode); sendResponse({ ok: true, mode: selectionMode }); return;
     }
     if (msg.action === "COLLECT") {
       if (!pluginEnabled) { safeSend({ action: "ERROR", message: "插件已关闭" }); sendResponse({ started: false }); return; }

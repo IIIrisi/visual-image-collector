@@ -7,6 +7,8 @@
   var scanTimer = null;
   var pluginEnabled = true;
   var lastSelectionMessage = "";
+  var selectionMode = "auto";
+  var manualSelected = new Set();
   var catalogProjectId = "";
 
   function safeSend(message) {
@@ -185,10 +187,12 @@
       badge = document.createElement("div"); badge.className = "huaban-dl-badge";
       badge.dataset.behanceId = record.id; host.appendChild(badge);
     }
-    badge.textContent = choose ? "✓" : "✗";
+    badge.textContent = choose ? "✓" : (selectionMode === "manual" ? "" : "✗");
     badge.onclick = function(event) {
       event.preventDefault(); event.stopPropagation();
-      selected.set(record.id, selected.get(record.id) === false);
+      var choose = selected.get(record.id) === false;
+      selected.set(record.id, choose);
+      if (selectionMode === "manual") { if (choose) manualSelected.add(record.id); else manualSelected.delete(record.id); }
       decorate(record); lastSelectionMessage = ""; updateCount();
     };
   }
@@ -233,7 +237,7 @@
     bodyMedia(document).forEach(function(record) {
       active.add(record.id); records.set(record.id, record);
       completeCatalog.set(record.id, record);
-      if (!selected.has(record.id)) selected.set(record.id, true);
+      if (!selected.has(record.id)) selected.set(record.id, selectionMode === "manual" ? manualSelected.has(record.id) : true);
       decorate(record);
     });
     records.forEach(function(record, id) {
@@ -250,7 +254,7 @@
       var doc = new DOMParser().parseFromString(await response.text(), "text/html");
       bodyMedia(doc).forEach(function(record) {
         record.element = null; completeCatalog.set(record.id, record);
-        if (!selected.has(record.id)) selected.set(record.id, true);
+        if (!selected.has(record.id)) selected.set(record.id, selectionMode === "manual" ? manualSelected.has(record.id) : true);
       });
       lastSelectionMessage = ""; updateCount();
     } catch (_error) { /* 已渲染正文仍可采集 */ }
@@ -298,8 +302,16 @@
     if (msg.action === "SET_WORK_SELECTION") {
       var choose = msg.selected !== false;
       selected.forEach(function(_value, id) { selected.set(id, choose); });
+      if (selectionMode === "manual") selected.forEach(function(_value, id) { if (choose) manualSelected.add(id); else manualSelected.delete(id); });
       records.forEach(decorate); lastSelectionMessage = ""; updateCount();
       sendResponse({ ok: true, selected: choose, total: selected.size, boardId: "behance_" + projectId() }); return;
+    }
+    if (msg.action === "UPDATE_SELECTION_MODE") {
+      selectionMode = msg.mode === "manual" ? "manual" : "auto";
+      document.documentElement.classList.toggle("huaban-dl-manual-mode", selectionMode === "manual");
+      selected.forEach(function(_value, id) { selected.set(id, selectionMode === "manual" ? manualSelected.has(id) : true); });
+      records.forEach(decorate); lastSelectionMessage = ""; updateCount();
+      sendResponse({ ok: true, mode: selectionMode }); return;
     }
     if (msg.action === "COLLECT") {
       if (!pluginEnabled) { safeSend({ action: "ERROR", message: "插件已关闭" }); sendResponse({ started: false }); return; }
@@ -308,8 +320,10 @@
     if (msg.action === "UPDATE_FILTER_SETTINGS" || msg.action === "ABORT") { sendResponse({ ok: true }); return; }
   });
 
-  chrome.storage.local.get(["aesthetic_collector_enabled"], function(data) {
+  chrome.storage.local.get(["aesthetic_collector_enabled", "aesthetic_selection_mode"], function(data) {
     pluginEnabled = data.aesthetic_collector_enabled !== false;
+    selectionMode = data.aesthetic_selection_mode === "manual" ? "manual" : "auto";
+    document.documentElement.classList.toggle("huaban-dl-manual-mode", selectionMode === "manual");
     document.documentElement.classList.toggle("huaban-dl-plugin-disabled", !pluginEnabled);
     scan(); ensureCompleteCatalog();
   });

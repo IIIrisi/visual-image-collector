@@ -23,6 +23,8 @@
   var liveScrollTimer = null;
   var lastLiveSlideIndex = 0;
   var lastLiveSlideNoteId = "";
+  var selectionMode = "auto";
+  var manualSelected = new Set();
   var liveRecordByHost = new WeakMap();
   var liveHostSelector = '.live-photo-contain, [class*="live-photo" i], [class*="livephoto" i], [class*="motion-photo" i]';
 
@@ -116,7 +118,7 @@
       activeIds.add(id);
       media.set(id, { id: id, url: originalImageUrl(url), fileType: "image/jpeg", mediaType: "image", index: index + 1,
         width: Number(image && image.width) || 0, height: Number(image && image.height) || 0 });
-      if (!selected.has(id)) selected.set(id, true);
+      if (!selected.has(id)) selected.set(id, selectionMode === "manual" ? manualSelected.has(id) : true);
     });
     var noteVideos = note.isVideo ? note.videos.filter(function(video) { return !(video && video.live); }).slice(0, 1) : note.videos;
     noteVideos.forEach(function(video, index) {
@@ -131,7 +133,7 @@
         isLiveVideo: !!(video && video.live), slideIndex: slideIndex,
         width: Number(liveCover && liveCover.width) || 0, height: Number(liveCover && liveCover.height) || 0,
         index: note.images.length + index + 1 });
-      if (!selected.has(id)) selected.set(id, true);
+      if (!selected.has(id)) selected.set(id, selectionMode === "manual" ? manualSelected.has(id) : true);
     });
     Array.from(media.keys()).forEach(function(id) { if (!activeIds.has(id)) { media.delete(id); selected.delete(id); } });
     scan(); updateCount();
@@ -394,7 +396,7 @@
       fileType: type === "image" ? "image/jpeg" : "video/mp4", mediaType: type, index: index,
       width: element.naturalWidth || element.videoWidth || 0, height: element.naturalHeight || element.videoHeight || 0 };
     media.set(id, record);
-    if (!selected.has(id)) selected.set(id, true);
+    if (!selected.has(id)) selected.set(id, selectionMode === "manual" ? manualSelected.has(id) : true);
     if (!note.noteId) note.noteId = noteId();
     if (!note.title || note.title === "小红书笔记") note.title = cleanTitle(document.title);
     return record;
@@ -581,11 +583,12 @@
     badge.className = "huaban-dl-badge xhs-dl-fixed-badge " + (isSelected ? "is-selected" : "is-deselected") +
       (record.isLiveVideo === true ? " is-live" : "");
     badge.dataset.xhsId = record.id;
-    badge.textContent = isSelected ? "✓" : "✗";
+    badge.textContent = isSelected ? "✓" : (selectionMode === "manual" ? "" : "✗");
     badge.onclick = record.isLiveVideo === true ? null : function(event) {
       event.preventDefault(); event.stopPropagation();
       var choose = selected.get(record.id) === false;
       selected.set(record.id, choose);
+      if (selectionMode === "manual") { if (choose) manualSelected.add(record.id); else manualSelected.delete(record.id); }
       if (choose) restorePending(record); else removePending(record);
       decorate(record, element); updateCount();
     };
@@ -609,6 +612,7 @@
     var record = activeXhsRecord, element = activeXhsElement;
     var choose = selected.get(record.id) === false;
     selected.set(record.id, choose);
+    if (selectionMode === "manual") { if (choose) manualSelected.add(record.id); else manualSelected.delete(record.id); }
     if (choose) restorePending(record); else removePending(record);
     decorate(record, element);
     updateCount();
@@ -847,8 +851,16 @@
     if (msg.action === "SET_WORK_SELECTION") {
       var choose = msg.selected !== false;
       selected.forEach(function(_value, id) { selected.set(id, choose); });
+      if (selectionMode === "manual") selected.forEach(function(_value, id) { if (choose) manualSelected.add(id); else manualSelected.delete(id); });
       scan(); lastSelectionMessage = ""; updateCount();
       sendResponse({ ok: true, selected: choose, total: selected.size, boardId: boardId() }); return;
+    }
+    if (msg.action === "UPDATE_SELECTION_MODE") {
+      selectionMode = msg.mode === "manual" ? "manual" : "auto";
+      document.documentElement.classList.toggle("huaban-dl-manual-mode", selectionMode === "manual");
+      selected.forEach(function(_value, id) { selected.set(id, selectionMode === "manual" ? manualSelected.has(id) : true); });
+      scan(); lastSelectionMessage = ""; updateCount();
+      sendResponse({ ok: true, mode: selectionMode }); return;
     }
     if (msg.action === "COLLECT") {
       if (!pluginEnabled) { safeSend({ action: "ERROR", message: "插件已关闭" }); sendResponse({ started: false }); return; }
@@ -857,8 +869,10 @@
     if (msg.action === "UPDATE_FILTER_SETTINGS" || msg.action === "ABORT") { sendResponse({ ok: true }); return; }
   });
 
-  chrome.storage.local.get(["aesthetic_collector_enabled"], function(data) {
+  chrome.storage.local.get(["aesthetic_collector_enabled", "aesthetic_selection_mode"], function(data) {
     pluginEnabled = data.aesthetic_collector_enabled !== false;
+    selectionMode = data.aesthetic_selection_mode === "manual" ? "manual" : "auto";
+    document.documentElement.classList.toggle("huaban-dl-manual-mode", selectionMode === "manual");
     document.documentElement.classList.toggle("huaban-dl-plugin-disabled", !pluginEnabled);
     scan();
   });

@@ -8,6 +8,15 @@
     chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(function() {});
   }
 
+  if (chrome.runtime.onInstalled && chrome.runtime.onInstalled.addListener) chrome.runtime.onInstalled.addListener(function() {
+    chrome.storage.local.get(["aesthetic_collector_enabled", "aesthetic_selection_mode"], function(data) {
+      var defaults = {};
+      if (typeof data.aesthetic_collector_enabled === "undefined") defaults.aesthetic_collector_enabled = true;
+      if (typeof data.aesthetic_selection_mode === "undefined") defaults.aesthetic_selection_mode = "auto";
+      if (Object.keys(defaults).length) chrome.storage.local.set(defaults);
+    });
+  });
+
   // ── 存储操作 ───────────────────────────────────
   // huaban_images: 待下载的 pin 图片
   // huaban_downloaded: 已下载过的 pin_id（仅用于去重，不存详情）

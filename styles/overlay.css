@@ -68,6 +68,23 @@ html.huaban-dl-plugin-disabled .huaban-dl-toast {
   background: rgba(0, 0, 0, 0.5);
 }
 
+/* 手动模式：待选项仍使用绿色边框，角标为空心；勾选后显示实心绿勾。 */
+html.huaban-dl-manual-mode .huaban-dl-card.huaban-dl-deselected:not(.huaban-dl-filter-suspicious):not(.huaban-dl-filter-rejected) .huaban-dl-overlay,
+html.huaban-dl-manual-mode .xhs-dl-image-layer.is-deselected,
+html.huaban-dl-manual-mode .xhs-dl-direct-deselected {
+  border-color: #22c55e !important;
+  outline-color: #22c55e !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html.huaban-dl-manual-mode .huaban-dl-deselected:not(.huaban-dl-filter-suspicious):not(.huaban-dl-filter-rejected) .huaban-dl-badge,
+html.huaban-dl-manual-mode .xhs-dl-fixed-badge.is-deselected {
+  color: transparent !important;
+  background: rgba(255,255,255,.88) !important;
+  border: 2px solid #22c55e !important;
+  box-sizing: border-box;
+}
+
 .huaban-dl-card.huaban-dl-filter-suspicious .huaban-dl-overlay {
   border: 3px solid #f59e0b;
   background: rgba(245, 158, 11, 0.18);

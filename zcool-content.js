@@ -12,15 +12,22 @@
   var catalogWorkId = "";
   var pluginEnabled = true;
   var lastSelectionMessage = "";
+  var selectionMode = "auto";
+  var manualSelected = new Set();
+  var settingsReady = false;
 
   function setPluginEnabled(enabled) {
     pluginEnabled = enabled !== false;
     document.documentElement.classList.toggle("huaban-dl-plugin-disabled", !pluginEnabled);
     if (pluginEnabled) { scan(); ensureCompleteCatalog().catch(function() {}); }
   }
-  chrome.storage.local.get(["aesthetic_collector_enabled"], function(data) {
-    setPluginEnabled(data.aesthetic_collector_enabled !== false);
-  });
+  function setSelectionMode(mode) {
+    selectionMode = mode === "manual" ? "manual" : "auto";
+    document.documentElement.classList.toggle("huaban-dl-manual-mode", selectionMode === "manual");
+    selected.forEach(function(_value, id) { selected.set(id, selectionMode === "manual" ? manualSelected.has(id) : true); });
+    works.forEach(decorate);
+    lastSelectionMessage = ""; updateCount();
+  }
 
   function safeSend(message) {
     try { chrome.runtime.sendMessage(message); } catch (_error) {}
@@ -59,6 +66,7 @@
     try {
       var parsed = new URL(String(value || ""), location.href);
       parsed.search = ""; parsed.hash = "";
+      parsed.pathname = parsed.pathname.replace(/(\.(?:jpe?g|png|gif|webp))(?:@.*)$/i, "$1");
       return parsed.href;
     } catch (_error) { return String(value || "").split(/[?#]/)[0]; }
   }
@@ -94,8 +102,9 @@
     Array.from(doc.querySelectorAll("img")).forEach(function(img, index) {
       if (!isBodyImage(img)) return;
       var url = absoluteImageUrl(img);
-      if (!url || seen.has(url)) return;
-      seen.add(url);
+      var canonicalUrl = canonicalMediaUrl(url);
+      if (!url || seen.has(canonicalUrl)) return;
+      seen.add(canonicalUrl);
       var iid = imageId(img, url, index);
       output.push({
         pin_id: "zcool:" + id + ":" + iid,
@@ -281,59 +290,61 @@
     return false;
   }
 
-  function decorate(record) {
-    var img = record.img;
+  function decorateElement(record, img) {
     if (!img || !document.contains(img)) return;
-    var layerId = "zcool-layer-" + String(record.id).replace(/[^a-z0-9_-]/gi, "-");
-    var overlay = document.getElementById(layerId);
-    if (!overlay) {
-      overlay = document.createElement("div");
-      overlay.id = layerId;
-      overlay.className = "huaban-dl-overlay zcool-dl-image-layer";
-    }
     var host = img.parentElement;
     if (!host) return;
+    host.dataset.zcoolMedia = record.id;
+    var overlay = host.querySelector(":scope > .zcool-dl-image-layer[data-zcool-id]");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.className = "huaban-dl-overlay zcool-dl-image-layer";
+      overlay.dataset.zcoolId = record.id;
+      host.appendChild(overlay);
+    }
     host.classList.add("huaban-dl-card", "zcool-dl-overlay-host");
     host.classList.toggle("huaban-dl-selected", selected.get(record.id) !== false);
     host.classList.toggle("huaban-dl-deselected", selected.get(record.id) === false);
-    if (overlay.parentElement !== host) host.appendChild(overlay);
     var rect = renderedMediaRect(img);
     var hostRect = host.getBoundingClientRect();
     overlay.style.left = rect.left - hostRect.left + host.scrollLeft + "px";
     overlay.style.top = rect.top - hostRect.top + host.scrollTop + "px";
     overlay.style.width = rect.width + "px";
     overlay.style.height = rect.height + "px";
-    overlay.style.display = !previewIsOpen() && rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight ? "block" : "none";
+    var visible = rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
+    overlay.style.display = visible ? "block" : "none";
     var badge = host.querySelector(":scope > .huaban-dl-badge[data-zcool-id]");
     if (!badge) {
       badge = document.createElement("div");
       badge.className = "huaban-dl-badge";
       badge.dataset.zcoolId = record.id;
-      badge.addEventListener("click", function(event) {
-        event.preventDefault(); event.stopPropagation();
-        selected.set(record.id, selected.get(record.id) === false);
-        decorate(record); updateCount();
-      });
       host.appendChild(badge);
     }
+    badge.onclick = function(event) {
+        event.preventDefault(); event.stopPropagation();
+        var choose = selected.get(record.id) === false;
+        selected.set(record.id, choose);
+        if (selectionMode === "manual") {
+          if (choose) manualSelected.add(record.id); else manualSelected.delete(record.id);
+        }
+        decorate(record); updateCount();
+      };
     badge.style.left = rect.right - hostRect.left + host.scrollLeft - 32 + "px";
     badge.style.top = rect.bottom - hostRect.top + host.scrollTop - 32 + "px";
     badge.style.right = "auto";
     badge.style.bottom = "auto";
-    badge.textContent = selected.get(record.id) === false ? "✗" : "✓";
+    badge.style.display = visible ? "flex" : "none";
+    badge.textContent = selected.get(record.id) === false ? (selectionMode === "manual" ? "" : "✗") : "✓";
+  }
+
+  function decorate(record) {
+    var elements = record.elements ? Array.from(record.elements) : [record.img];
+    elements.forEach(function(element) { decorateElement(record, element); });
   }
 
   function syncAllLayers() {
     positionFrame = 0;
-    var activeIds = new Set();
-    works.forEach(function(record, id) {
-      if (!record.img || !document.contains(record.img)) return;
-      activeIds.add("zcool-layer-" + String(id).replace(/[^a-z0-9_-]/gi, "-"));
-      decorate(record);
-    });
-    document.querySelectorAll(".zcool-dl-image-layer").forEach(function(layer) {
-      if (!activeIds.has(layer.id)) layer.remove();
-    });
+    works.forEach(decorate);
   }
 
   function schedulePositionSync() {
@@ -364,35 +375,55 @@
       var recommended = hasMediumOrLargeFire(root, card);
       var record = { id: id, url: anchor.href, title: img.alt || (root.textContent || "").trim().slice(0, 80), card: card, img: img, root: root, promoted: promoted, recommended: recommended };
       works.set(id, record);
-      if (!selected.has(id)) selected.set(id, !promoted && recommended);
+      if (!selected.has(id)) selected.set(id, selectionMode === "manual" ? manualSelected.has(id) : !promoted && recommended);
       decorate(record);
     });
   }
 
   function scanWork() {
-    var id = workId(location.href), imageElements = Array.from(document.querySelectorAll("img")).filter(isBodyImage);
-    var images = bodyImages(document, id);
-    images.forEach(function(image, index) {
-      var img = imageElements[index];
-      if (!img) return;
-      var card = img.parentElement || img;
-      var record = { id: image.pin_id, image: image, card: card, img: img };
-      works.set(record.id, record);
-      if (!selected.has(record.id)) selected.set(record.id, true);
-      decorate(record);
+    var id = workId(location.href), activeElements = new Set(), activeIds = new Set();
+    works.forEach(function(record) { record.elements = new Set(); });
+    Array.from(document.querySelectorAll("img")).filter(isBodyImage).forEach(function(img, index) {
+      var url = absoluteImageUrl(img), canonicalUrl = canonicalMediaUrl(url);
+      var image = catalogByUrl.get(canonicalUrl);
+      if (!image) {
+        var iid = imageId(img, url, index);
+        image = completeCatalog.get("zcool:" + id + ":" + iid) || {
+          pin_id: "zcool:" + id + ":" + iid, url: url, fileKey: url,
+          fileType: /\.gif(?:\?|$)/i.test(url) ? "image/gif" : /\.png(?:\?|$)/i.test(url) ? "image/png" : "image/jpeg",
+          width: img.naturalWidth || 0, height: img.naturalHeight || 0,
+          text: img.getAttribute("alt") || pageTitle(), exportName: pageTitle()
+        };
+        catalogByUrl.set(canonicalUrl, image);
+      }
+      var record = works.get(image.pin_id);
+      if (!record) record = { id: image.pin_id, image: image, elements: new Set() };
+      record.image = image; record.elements.add(img); record.img = img;
+      works.set(record.id, record); activeIds.add(record.id); activeElements.add(img);
+      if (!selected.has(record.id)) selected.set(record.id, selectionMode === "manual" ? manualSelected.has(record.id) : true);
     });
     bodyVideos(document, id).forEach(function(video) {
       var element = video.element;
       delete video.element;
-      var record = { id: video.pin_id, image: video, card: element.parentElement || element, img: element };
+      var record = works.get(video.pin_id) || { id: video.pin_id, image: video, elements: new Set() };
+      record.image = video; record.elements.add(element); record.img = element;
       works.set(record.id, record);
-      if (!selected.has(record.id)) selected.set(record.id, true);
-      decorate(record);
+      activeIds.add(record.id); activeElements.add(element);
+      if (!selected.has(record.id)) selected.set(record.id, selectionMode === "manual" ? manualSelected.has(record.id) : true);
+    });
+    Array.from(works.keys()).forEach(function(recordId) { if (!activeIds.has(recordId)) works.delete(recordId); });
+    works.forEach(decorate);
+    document.querySelectorAll("[data-zcool-media]").forEach(function(host) {
+      var mediaElement = host.querySelector("img, video");
+      if (mediaElement && activeElements.has(mediaElement)) return;
+      host.querySelectorAll(":scope > .zcool-dl-image-layer, :scope > .huaban-dl-badge[data-zcool-id]").forEach(function(node) { node.remove(); });
+      host.classList.remove("huaban-dl-card", "zcool-dl-overlay-host", "huaban-dl-selected", "huaban-dl-deselected");
+      delete host.dataset.zcoolMedia;
     });
   }
 
   function scan() {
-    if (!pluginEnabled) return;
+    if (!pluginEnabled || !settingsReady) return;
     // 站酷列表页不再做默认选择：用户进入作品详情后再采集整件作品。
     if (pageType() === "work") scanWork();
     else {
@@ -430,7 +461,7 @@
       images.forEach(function(image) {
         completeCatalog.set(image.pin_id, image);
         catalogByUrl.set(canonicalMediaUrl(image.url), image);
-        if (!selected.has(image.pin_id)) selected.set(image.pin_id, true);
+        if (!selected.has(image.pin_id)) selected.set(image.pin_id, selectionMode === "manual" ? manualSelected.has(image.pin_id) : true);
       });
       updateCount();
       scheduleScan();
@@ -479,6 +510,7 @@
       var choose = msg.selected !== false;
       selected.forEach(function(_value, id) { selected.set(id, choose); });
       completeCatalog.forEach(function(_image, id) { selected.set(id, choose); });
+      if (selectionMode === "manual") selected.forEach(function(_value, id) { if (choose) manualSelected.add(id); else manualSelected.delete(id); });
       works.forEach(function(record, id) { selected.set(id, choose); decorate(record); });
       lastSelectionMessage = ""; updateCount();
       sendResponse({ ok: true, selected: choose, total: selected.size, boardId: "zcool_" + pageTitle() }); return;
@@ -491,6 +523,7 @@
       collect(); sendResponse({ started: true }); return true;
     }
     if (msg.action === "UPDATE_FILTER_SETTINGS") { sendResponse({ ok: true }); return; }
+    if (msg.action === "UPDATE_SELECTION_MODE") { setSelectionMode(msg.mode); sendResponse({ ok: true, mode: selectionMode }); return; }
     if (msg.action === "ABORT") { sendResponse({ ok: true }); return; }
   });
 
@@ -511,7 +544,14 @@
     requestAnimationFrame(schedulePositionSync);
     setTimeout(schedulePositionSync, 120);
   }, true);
-  scan();
-  if (pageType() === "work") ensureCompleteCatalog().catch(function() {});
-  safeSend({ action: "PAGE_TYPE", pageType: pageType(), site: "zcool" });
+  chrome.storage.local.get(["aesthetic_collector_enabled", "aesthetic_selection_mode"], function(data) {
+    pluginEnabled = data.aesthetic_collector_enabled !== false;
+    selectionMode = data.aesthetic_selection_mode === "manual" ? "manual" : "auto";
+    settingsReady = true;
+    document.documentElement.classList.toggle("huaban-dl-plugin-disabled", !pluginEnabled);
+    document.documentElement.classList.toggle("huaban-dl-manual-mode", selectionMode === "manual");
+    scan();
+    if (pageType() === "work") ensureCompleteCatalog().catch(function() {});
+    safeSend({ action: "PAGE_TYPE", pageType: pageType(), site: "zcool" });
+  });
 })();

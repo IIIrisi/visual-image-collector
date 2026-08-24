@@ -27,6 +27,8 @@
   var pluginStatusNote = document.getElementById("pluginStatusNote");
   var filterSection = document.getElementById("filterSection");
   var btnToggleWorkSelection = document.getElementById("btnToggleWorkSelection");
+  var manualSelectionMode = document.getElementById("manualSelectionMode");
+  var selectionModeNote = document.getElementById("selectionModeNote");
 
   var currentTabId = null;
   var isCollecting = false;
@@ -39,6 +41,8 @@
   var pluginEnabledState = true;
   var workSelectionEnabled = true;
   var lastSelectionUiSignature = "";
+  var selectionMode = "auto";
+  var lastFilterStats = null;
 
   var filterDefaults = {
     enabled: true, alphaRatio: 0.15,
@@ -61,10 +65,11 @@
 
   function renderFilterStats(stats) {
     stats = stats || { accepted: 0, suspicious: 0, rejected: 0, manualExcluded: 0, reasons: {} };
+    lastFilterStats = stats;
     filterSummary.innerHTML = '<span class="filter-stat"><i class="filter-dot filter-dot-normal"></i>正常 ' + (stats.accepted || 0) + '</span>' +
       '<span class="filter-stat"><i class="filter-dot filter-dot-suspicious"></i>疑似 ' + (stats.suspicious || 0) + '</span>' +
       '<span class="filter-stat"><i class="filter-dot filter-dot-rejected"></i>排除 ' + (stats.rejected || 0) + '</span>' +
-      '<span class="filter-stat"><i class="filter-dot filter-dot-manual"></i>手动排除 ' + (stats.manualExcluded || 0) + '</span>';
+      '<span class="filter-stat"><i class="filter-dot filter-dot-manual"></i>' + (selectionMode === "manual" ? "待选择 " : "手动排除 ") + (stats.manualExcluded || 0) + '</span>';
   }
 
   loadFilterSettings();
@@ -77,13 +82,61 @@
     if (!pluginEnabledState) { btnToggleWorkSelection.style.display = "none"; showUnsupported("插件已关闭"); }
   }
 
-  chrome.storage.local.get(["aesthetic_collector_enabled"], function(data) {
+  chrome.storage.local.get(["aesthetic_collector_enabled", "aesthetic_selection_mode"], function(data) {
     pluginEnabledState = data.aesthetic_collector_enabled !== false;
+    selectionMode = data.aesthetic_selection_mode === "manual" ? "manual" : "auto";
+    manualSelectionMode.checked = selectionMode === "manual";
+    selectionModeNote.textContent = selectionMode === "manual" ? "已开启：可手动勾选内容" : "关闭时自动选择符合规则的内容";
     renderPluginState();
   });
 
   // ── 右侧栏页面绑定 ────────────────────────────
   // 侧栏会长期存在，必须在活动标签或 SPA 路由变化后重新绑定目标页面。
+  function injectForSupportedPage(tab, done) {
+    var url = tab.url || "";
+    var mainFiles = [], isolatedFiles = [], cssFiles = ["styles/overlay.css"];
+    if (url.indexOf("huaban.com") !== -1) {
+      mainFiles = ["url-watcher.js"];
+      isolatedFiles = ["filter-engine.js", "content.js"];
+    } else if (url.indexOf("pinterest.com") !== -1) {
+      isolatedFiles = ["filter-engine.js", "pinterest-content.js"];
+    } else if (url.indexOf("zcool.com.cn") !== -1) {
+      isolatedFiles = ["filter-engine.js", "zcool-content.js"];
+    } else if (url.indexOf("xiaohongshu.com") !== -1) {
+      mainFiles = ["xhs-inject.js"];
+      isolatedFiles = ["xhs-content.js"];
+    } else if (url.indexOf("behance.net") !== -1) {
+      isolatedFiles = ["behance-content.js"];
+    } else { done(false); return; }
+
+    var target = { tabId: tab.id };
+    chrome.scripting.insertCSS({ target: target, files: cssFiles }).catch(function() {});
+    var chain = Promise.resolve();
+    if (mainFiles.length) chain = chain.then(function() {
+      return chrome.scripting.executeScript({ target: target, files: mainFiles, world: "MAIN" });
+    });
+    chain.then(function() {
+      return chrome.scripting.executeScript({ target: target, files: isolatedFiles });
+    }).then(function() { done(true); }).catch(function() { done(false); });
+  }
+
+  function detectPageWithBootstrap(tab, callback) {
+    chrome.tabs.sendMessage(tab.id, { action: "DETECT_PAGE" }, function(resp) {
+      var unavailable = !!chrome.runtime.lastError || !resp;
+      if (!unavailable) { callback(resp); return; }
+      // 新安装扩展不会自动注入到安装前已打开的标签页；在用户打开侧栏时自愈注入。
+      injectForSupportedPage(tab, function(ok) {
+        if (!ok) { callback(null); return; }
+        setTimeout(function() {
+          chrome.tabs.sendMessage(tab.id, { action: "DETECT_PAGE" }, function(retryResp) {
+            if (chrome.runtime.lastError || !retryResp) callback(null);
+            else callback(retryResp);
+          });
+        }, 300);
+      });
+    });
+  }
+
   function bindActiveTab(restoreTask) {
     chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
     var tab = tabs[0];
@@ -98,8 +151,8 @@
     chrome.runtime.sendMessage({ action: "GET_TASK_STATE" }, function(taskState) {
       if (chrome.runtime.lastError) taskState = { status: "idle" };
 
-      chrome.tabs.sendMessage(currentTabId, { action: "DETECT_PAGE" }, function(resp) {
-        if (chrome.runtime.lastError || !resp) {
+      detectPageWithBootstrap(tab, function(resp) {
+        if (!resp) {
           showUnsupported("请刷新当前网页后重试");
           return;
         }
@@ -130,6 +183,8 @@
             workSelectionEnabled = (resp.selected || 0) > 0;
             btnToggleWorkSelection.textContent = workSelectionEnabled ? "取消选择此作品的全部图片" : "重新选择此作品的全部图片";
           }
+        } else if (resp.pageType === "home") {
+          pageTypeEl.textContent = "当前页面：花瓣首页瀑布流";
         } else if (resp.pageType === "board") {
           pageTypeEl.textContent = "当前页面：画板";
           if (resp.boardTitle) {
@@ -143,7 +198,7 @@
             pageTypeEl.textContent += " + " + resp.recommendedCount + " 个推荐";
           }
         } else {
-          showUnsupported("请在花瓣网画板、搜索页或 Pin 页使用");
+          showUnsupported("请在花瓣网首页、画板、搜索页或 Pin 页使用");
           return;
         }
 
@@ -515,6 +570,15 @@
       if (currentTabId) chrome.tabs.sendMessage(currentTabId, { action: "UPDATE_PLUGIN_ENABLED", enabled: pluginEnabledState });
       renderPluginState();
       if (pluginEnabledState) bindActiveTab(false);
+    });
+  });
+
+  manualSelectionMode.addEventListener("change", function() {
+    selectionMode = manualSelectionMode.checked ? "manual" : "auto";
+    selectionModeNote.textContent = selectionMode === "manual" ? "已开启：可手动勾选内容" : "关闭时自动选择符合规则的内容";
+    if (lastFilterStats) renderFilterStats(lastFilterStats);
+    chrome.storage.local.set({ aesthetic_selection_mode: selectionMode }, function() {
+      if (currentTabId) chrome.tabs.sendMessage(currentTabId, { action: "UPDATE_SELECTION_MODE", mode: selectionMode });
     });
   });
 

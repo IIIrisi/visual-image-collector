@@ -4,15 +4,13 @@
   "use strict";
 
   var pluginEnabled = true;
+  var selectionMode = "auto";
   function setPluginEnabled(enabled) {
     pluginEnabled = enabled !== false;
     document.documentElement.classList.toggle("huaban-dl-plugin-disabled", !pluginEnabled);
     if (!pluginEnabled) cleanup();
     else initPage();
   }
-  chrome.storage.local.get(["aesthetic_collector_enabled"], function(data) {
-    setPluginEnabled(data.aesthetic_collector_enabled !== false);
-  });
 
   // ── 工具函数 ────────────────────────────────────
   function sanitizeName(s) {
@@ -92,6 +90,8 @@
   var autoExcludedPins = new Set();    // 仅记录智能过滤造成的取消，关闭时可恢复
   var manualAcceptedPins = new Set();  // 用户手动恢复的过滤图，优先于自动分类
   var manualDeselectedPins = new Set();// 用户主动取消，始终使用灰色状态
+  var manualSelectedPins = new Set();  // 手动模式的已选项，跨模式切换保留
+  var manualFilterOverridePins = new Set(); // 手动模式中明确恢复的过滤项
   var removedPendingPins = new Set();  // 曾从待下载撤回，重新勾选时恢复
   var lastSelectionMessage = "";
   var rejectedQueueTimer = null;
@@ -111,7 +111,7 @@
   }
 
   function currentQueueBoardInfo() {
-    var pt = pageType();
+    var pt = detectPageType();
     if (pt === "board" && currentBoardData) return {
       boardId: currentBoardData.board_id, boardTitle: currentBoardData.title,
       creator: currentBoardData.description || "", sourceUrl: location.href
@@ -204,7 +204,7 @@
       card.classList.remove("huaban-dl-selected");
       card.classList.add("huaban-dl-deselected");
       var grayBadge = card.querySelector(".huaban-dl-badge");
-      if (grayBadge) grayBadge.textContent = "\u2717";
+      if (grayBadge) grayBadge.textContent = selectionMode === "manual" ? "" : "\u2717";
       var grayReason = card.querySelector(".huaban-dl-filter-reason");
       if (grayReason) grayReason.remove();
       pinSelectionState.set(String(pid), false);
@@ -429,21 +429,27 @@
 
     if (!enabled) {
       autoExcludedPins.forEach(function(pid) {
-        pinSelectionState.set(pid, true);
         filterResults.set(pid, HuabanFilter.result("accepted", null, 1));
-        restoreAutoExcludedCard(pid);
+        if ((selectionMode === "manual" && manualSelectedPins.has(String(pid))) ||
+            (selectionMode !== "manual" && !manualDeselectedPins.has(String(pid)))) {
+          pinSelectionState.set(pid, true);
+          restoreAutoExcludedCard(pid);
+        }
       });
       // 虚拟瀑布流可能已重建 DOM，再扫描一次所有当前可见的过滤卡片。
       document.querySelectorAll(".huaban-dl-filter-suspicious, .huaban-dl-filter-rejected").forEach(function(card) {
         var badge = card.querySelector(".huaban-dl-badge");
         var pid = badge && badge.dataset.pinId;
         if (pid) {
-          pinSelectionState.set(pid, true);
           filterResults.set(pid, HuabanFilter.result("accepted", null, 1));
+          if ((selectionMode === "manual" && manualSelectedPins.has(String(pid))) ||
+              (selectionMode !== "manual" && !manualDeselectedPins.has(String(pid)))) pinSelectionState.set(pid, true);
         }
-        card.classList.remove("huaban-dl-filter-suspicious", "huaban-dl-filter-rejected", "huaban-dl-deselected");
-        card.classList.add("huaban-dl-selected");
-        if (badge) badge.textContent = "\u2713";
+        var choose = pid ? pinSelectionState.get(String(pid)) === true : false;
+        card.classList.remove("huaban-dl-filter-suspicious", "huaban-dl-filter-rejected");
+        card.classList.toggle("huaban-dl-selected", choose);
+        card.classList.toggle("huaban-dl-deselected", !choose);
+        if (badge) badge.textContent = choose ? "\u2713" : (selectionMode === "manual" ? "" : "\u2717");
         var reason = card.querySelector(".huaban-dl-filter-reason");
         if (reason) reason.remove();
       });
@@ -471,8 +477,8 @@
     if (/^\/boards\/\d+/.test(path)) return "board";
     if (/^\/search/.test(path)) return "search";
     if (/^\/pins\/\d+/.test(path)) return "pin";
-    if (/^\/discovery/.test(path)) return "discovery";
-    return "unknown";
+    if (/^\/discovery/.test(path)) return "home";
+    return "home";
   }
 
   // ── 通过 inject.js 读取 __NEXT_DATA__ ──────────
@@ -585,6 +591,41 @@
   var recommendedPinDataMap = {}; // pin_id → 推荐 pin 完整数据（从 inject.js 或 API 获取）
   var overlayObserver = null;
 
+  function setSelectionMode(mode) {
+    selectionMode = mode === "manual" ? "manual" : "auto";
+    document.documentElement.classList.toggle("huaban-dl-manual-mode", selectionMode === "manual");
+    defaultSelectionState = selectionMode !== "manual";
+    if (typeof pinSelectionState === "undefined") return;
+    manualAcceptedPins.clear();
+    manualDeselectedPins.clear();
+    if (selectionMode === "manual") manualFilterOverridePins.forEach(function(pid) { manualAcceptedPins.add(pid); });
+    pinSelectionState.forEach(function(_value, pid) {
+      var classification = filterResults.get(String(pid));
+      var allowedByFilter = !(classification && classification.state !== "accepted") ||
+        (selectionMode === "manual" && manualFilterOverridePins.has(String(pid)));
+      var choose = selectionMode === "manual" ? manualSelectedPins.has(String(pid)) && allowedByFilter : allowedByFilter;
+      pinSelectionState.set(String(pid), choose);
+      var card = findPinCard(String(pid));
+      if (card) {
+        card.classList.toggle("huaban-dl-selected", choose);
+        card.classList.toggle("huaban-dl-deselected", !choose);
+        var badge = card.querySelector(".huaban-dl-badge");
+        if (badge) badge.textContent = choose ? "\u2713" : (selectionMode === "manual" ? "" : "\u2717");
+      }
+    });
+    pinSelectionState.forEach(function(_value, pid) { setCardFilterAppearance(String(pid)); });
+    if (selectionMode === "manual") {
+      var pendingIds = [];
+      pinSelectionState.forEach(function(choose, pid) { if (!choose) pendingIds.push(pid); });
+      removePendingPins(pendingIds);
+      var rememberedIds = Array.from(manualSelectedPins);
+      restorePendingPins(rememberedIds);
+    }
+    else restorePendingPins(Array.from(pinSelectionState.keys()));
+    lastSelectionMessage = "";
+    updateSelectionCount();
+  }
+
   function addPinOverlays(pins) {
     if (!pluginEnabled) return 0;
     // 找到页面上的 Pin 卡片元素
@@ -621,7 +662,7 @@
       if (pinSelectionState.has(pid)) {
         isSelected = pinSelectionState.get(pid); // 保留用户之前的选择
       } else {
-        isSelected = defaultSelectionState;      // 全新 pin，用默认值
+        isSelected = selectionMode === "manual" ? manualSelectedPins.has(pid) : defaultSelectionState;
         pinSelectionState.set(pid, isSelected);
       }
       card.classList.add("huaban-dl-card");
@@ -634,7 +675,7 @@
 
       var badge = document.createElement("div");
       badge.className = "huaban-dl-badge";
-      badge.textContent = isSelected ? "\u2713" : "\u2717";
+      badge.textContent = isSelected ? "\u2713" : (selectionMode === "manual" ? "" : "\u2717");
       badge.dataset.pinId = pid;
       card.appendChild(badge);
 
@@ -669,16 +710,19 @@
     var isSelected = card.classList.contains("huaban-dl-selected");
     if (isSelected) {
       manualAcceptedPins.delete(String(pid));
-      manualDeselectedPins.add(String(pid));
+      if (selectionMode === "manual") { manualSelectedPins.delete(String(pid)); manualFilterOverridePins.delete(String(pid)); }
+      else manualDeselectedPins.add(String(pid));
       card.classList.remove("huaban-dl-selected");
       card.classList.add("huaban-dl-deselected");
-      badge.textContent = "\u2717"; // cross
+      badge.textContent = selectionMode === "manual" ? "" : "\u2717"; // pending/cross
       pinSelectionState.set(pid, false);
       removePendingPins([pid]);
     } else {
       manualDeselectedPins.delete(String(pid));
+      if (selectionMode === "manual") manualSelectedPins.add(String(pid));
       if (classification && classification.state !== "accepted") {
         manualAcceptedPins.add(String(pid));
+        if (selectionMode === "manual") manualFilterOverridePins.add(String(pid));
         autoExcludedPins.delete(String(pid));
       }
       card.classList.remove("huaban-dl-deselected");
@@ -840,10 +884,9 @@
     // 从 URL 提取搜索关键词
     var params = new URLSearchParams(location.search);
     var query = params.get("q") || params.get("word") || "";
-    if (!query) {
-      safeSend({ action: "ERROR", message: "未找到搜索关键词" });
-      return;
-    }
+    var isHome = detectPageType() === "home";
+    if (!query && !isHome) { safeSend({ action: "ERROR", message: "未找到搜索关键词" }); return; }
+    if (!query) query = "首页";
 
     // 搜索页只以用户实际滚动、看到并勾选的 Pin 为采集白名单。
     // 不再把搜索 API 的全部结果自动视为选中。
@@ -900,7 +943,7 @@
       updateSelectionCount();
       chrome.runtime.sendMessage({
         action: "ADD_IMAGES",
-        boardInfo: { boardId: "search_" + query, boardTitle: "搜索: " + query, creator: "", sourceUrl: location.href },
+        boardInfo: { boardId: (isHome ? "home_" : "search_") + query, boardTitle: isHome ? "花瓣首页" : "搜索: " + query, creator: "", sourceUrl: location.href },
         pins: selectedPins
       }, function(resp) {
         if (chrome.runtime.lastError) {
@@ -1026,7 +1069,7 @@
   // ── 清理覆盖层 ────────────────────────────────
   function cleanup() {
     pinSelectionState.clear();
-    defaultSelectionState = true; // 重置为默认全选
+    defaultSelectionState = selectionMode !== "manual"; // 手动模式切页后仍保持待选择
     currentBoardData = null;
     currentPinData = null;
     currentPinId = null;
@@ -1100,7 +1143,7 @@
 
     if (pageType === "board") {
       initBoardPage();
-    } else if (pageType === "search") {
+    } else if (pageType === "search" || pageType === "home") {
       // 搜索页：不主动加载，等用户点"采集"时通过 API 加载
       // 但尝试给已渲染的卡片加覆盖层
       setTimeout(function() {
@@ -1509,7 +1552,7 @@
         } else {
           collectFromBoard(currentBoardData, boardAllPins);
         }
-      } else if (pageType === "search") {
+      } else if (pageType === "search" || pageType === "home") {
         collectFromSearch();
       } else if (pageType === "pin") {
         if (!currentPinData) {
@@ -1577,6 +1620,12 @@
       filterSettings = HuabanFilter.mergeSettings(msg.settings);
       refreshFilterState(!!filterSettings.enabled);
       sendResponse({ ok: true, settings: filterSettings });
+      return;
+    }
+
+    if (msg.action === "UPDATE_SELECTION_MODE") {
+      setSelectionMode(msg.mode);
+      sendResponse({ ok: true, mode: selectionMode });
       return;
     }
 
@@ -1829,7 +1878,10 @@
     });
   }
 
-  // ── 启动 ─────────────────────────────────────
-  initPage();
+  // ── 启动：一次性加载设置后初始化，避免首次安装时的异步竞态和重复扫描。 ──
+  chrome.storage.local.get(["aesthetic_collector_enabled", "aesthetic_selection_mode"], function(data) {
+    setSelectionMode(data.aesthetic_selection_mode === "manual" ? "manual" : "auto");
+    setPluginEnabled(data.aesthetic_collector_enabled !== false);
+  });
 
 })();
