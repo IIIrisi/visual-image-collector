@@ -290,51 +290,70 @@
     return false;
   }
 
+  function directCollectorChild(host, className, recordId) {
+    return Array.from(host.children || []).find(function(node) {
+      return node.classList && node.classList.contains(className) && node.dataset && node.dataset.zcoolId === recordId;
+    }) || null;
+  }
+
   function decorateElement(record, img) {
     if (!img || !document.contains(img)) return;
     var host = img.parentElement;
     if (!host) return;
     host.dataset.zcoolMedia = record.id;
-    var overlay = host.querySelector(":scope > .zcool-dl-image-layer[data-zcool-id]");
+    var overlay = directCollectorChild(host, "zcool-dl-image-layer", record.id);
     if (!overlay) {
       overlay = document.createElement("div");
       overlay.className = "huaban-dl-overlay zcool-dl-image-layer";
-      overlay.dataset.zcoolId = record.id;
       host.appendChild(overlay);
     }
+    overlay.dataset.zcoolId = record.id;
     host.classList.add("huaban-dl-card", "zcool-dl-overlay-host");
-    host.classList.toggle("huaban-dl-selected", selected.get(record.id) !== false);
-    host.classList.toggle("huaban-dl-deselected", selected.get(record.id) === false);
+    var isSelected = selected.get(record.id) !== false;
+    host.classList.toggle("huaban-dl-selected", isSelected);
+    host.classList.toggle("huaban-dl-deselected", !isSelected);
+    overlay.classList.toggle("zcool-dl-selected", isSelected);
+    overlay.classList.toggle("zcool-dl-deselected", !isSelected);
     var rect = renderedMediaRect(img);
     var hostRect = host.getBoundingClientRect();
     overlay.style.left = rect.left - hostRect.left + host.scrollLeft + "px";
     overlay.style.top = rect.top - hostRect.top + host.scrollTop + "px";
     overlay.style.width = rect.width + "px";
     overlay.style.height = rect.height + "px";
-    var visible = rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < innerHeight;
-    overlay.style.display = visible ? "block" : "none";
-    var badge = host.querySelector(":scope > .huaban-dl-badge[data-zcool-id]");
+    // 选框属于媒体容器自身，不需要按当前视口做显示/隐藏。
+    // 若在视口外先设为 none，滚动本身又不会触发扫描，就会出现滚动期间选框消失、
+    // 等站酷懒加载或 DOM 更新后才重新显示的问题。让浏览器随宿主自然滚动即可。
+    overlay.style.display = "block";
+    var badge = directCollectorChild(host, "huaban-dl-badge", record.id);
     if (!badge) {
       badge = document.createElement("div");
       badge.className = "huaban-dl-badge";
-      badge.dataset.zcoolId = record.id;
       host.appendChild(badge);
     }
-    badge.onclick = function(event) {
+    badge.dataset.zcoolId = record.id;
+    badge.classList.add("zcool-dl-badge");
+    badge.classList.toggle("zcool-dl-selected", isSelected);
+    badge.classList.toggle("zcool-dl-deselected", !isSelected);
+    if (badge.dataset.zcoolBound !== "1") badge.onclick = function(event) {
         event.preventDefault(); event.stopPropagation();
-        var choose = selected.get(record.id) === false;
-        selected.set(record.id, choose);
+        var currentId = badge.dataset.zcoolId;
+        var currentRecord = works.get(currentId);
+        if (!currentRecord) return;
+        var choose = selected.get(currentId) === false;
+        selected.set(currentId, choose);
         if (selectionMode === "manual") {
-          if (choose) manualSelected.add(record.id); else manualSelected.delete(record.id);
+          if (choose) manualSelected.add(currentId); else manualSelected.delete(currentId);
         }
-        decorate(record); updateCount();
+        decorate(currentRecord); updateCount();
       };
+    badge.dataset.zcoolBound = "1";
     badge.style.left = rect.right - hostRect.left + host.scrollLeft - 32 + "px";
     badge.style.top = rect.bottom - hostRect.top + host.scrollTop - 32 + "px";
     badge.style.right = "auto";
     badge.style.bottom = "auto";
-    badge.style.display = visible ? "flex" : "none";
-    badge.textContent = selected.get(record.id) === false ? (selectionMode === "manual" ? "" : "✗") : "✓";
+    badge.style.display = "flex";
+    var badgeText = isSelected ? "✓" : (selectionMode === "manual" ? "" : "✗");
+    if (badge.textContent !== badgeText) badge.textContent = badgeText;
   }
 
   function decorate(record) {
@@ -414,8 +433,13 @@
     Array.from(works.keys()).forEach(function(recordId) { if (!activeIds.has(recordId)) works.delete(recordId); });
     works.forEach(decorate);
     document.querySelectorAll("[data-zcool-media]").forEach(function(host) {
-      var mediaElement = host.querySelector("img, video");
-      if (mediaElement && activeElements.has(mediaElement)) return;
+      host.querySelectorAll(":scope > .zcool-dl-image-layer, :scope > .huaban-dl-badge[data-zcool-id]").forEach(function(node) {
+        if (!activeIds.has(String(node.dataset.zcoolId || ""))) node.remove();
+      });
+      var hasActiveMedia = Array.from(host.querySelectorAll("img, video")).some(function(mediaElement) {
+        return activeElements.has(mediaElement);
+      });
+      if (hasActiveMedia) return;
       host.querySelectorAll(":scope > .zcool-dl-image-layer, :scope > .huaban-dl-badge[data-zcool-id]").forEach(function(node) { node.remove(); });
       host.classList.remove("huaban-dl-card", "zcool-dl-overlay-host", "huaban-dl-selected", "huaban-dl-deselected");
       delete host.dataset.zcoolMedia;

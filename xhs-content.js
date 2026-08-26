@@ -147,11 +147,34 @@
   }
 
   function visibleDetailRoot(element) {
-    return element.closest('[class*="note-detail"], [class*="note-container"], [class*="modal"], [class*="mask"], main') || element.parentElement;
+    return element && element.closest && element.closest('[class*="note-detail" i], [class*="note-container" i], [class*="modal" i], [class*="mask" i], [class*="viewer" i], [class*="preview" i]');
+  }
+
+  function matchesKnownNoteMedia(element) {
+    if (!element || !element.tagName) return false;
+    var tag = element.tagName.toLowerCase();
+    if (tag !== "img" && tag !== "video") return false;
+    var source = element.currentSrc || element.src || "";
+    var key = urlKey(source);
+    if (tag === "video" && note.isVideo && /^blob:/i.test(source)) return true;
+    var matched = false;
+    media.forEach(function(record) {
+      if (!matched && record.mediaType === (tag === "video" ? "video" : "image") && urlKey(record.url) === key) matched = true;
+    });
+    if (matched) return true;
+    if (tag === "img") {
+      return note.images.some(function(image) {
+        var url = typeof image === "string" ? image : image && image.url;
+        return !!url && urlKey(url) === key;
+      });
+    }
+    return note.isVideo && note.videos.length > 0;
   }
 
   function isBodyMedia(element) {
-    if (!element || !visibleDetailRoot(element)) return false;
+    var detailRoot = visibleDetailRoot(element);
+    if (!element || !detailRoot || !matchesKnownNoteMedia(element)) return false;
+    if (element.closest('[class*="comment" i], [class*="reply" i], [class*="avatar" i], [class*="author" i], [class*="recommend" i], [class*="interaction" i]')) return false;
     var rect = element.getBoundingClientRect();
     if (rect.width < 240 || rect.height < 180) return false;
     var classes = String(element.className || "") + " " + String(element.parentElement && element.parentElement.className || "");
@@ -417,6 +440,18 @@
     return freeSpace / 2;
   }
 
+  function imageZoomViewerOpen() {
+    var controls = document.querySelectorAll("button, span, div");
+    for (var i = 0; i < controls.length; i++) {
+      var control = controls[i];
+      if (control.childElementCount > 2 || !/^\s*\d{1,3}%\s*$/.test(control.textContent || "")) continue;
+      var rect = control.getBoundingClientRect(), style = getComputedStyle(control);
+      if (rect.width > 0 && rect.height > 0 && rect.right > 0 && rect.bottom > 0 && rect.left < innerWidth && rect.top < innerHeight &&
+          style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity || 1) > 0.1) return true;
+    }
+    return false;
+  }
+
   // 侧边栏会改变轮播容器宽度；根据原图比例与 object-fit 计算真正绘制的图像区域。
   function renderedMediaRect(element, record) {
     var box = element.getBoundingClientRect();
@@ -659,10 +694,10 @@
     if (outline) outline.style.display = "none";
   }
 
-  // Live 使用 fixed 选框：页面或弹层滚动时立即隐藏，禁止沿用旧坐标跟随页面。
-  // 滚动停止后清空旧帧，再由当前 Live 实际媒体区域稳定两帧后重新定位。
+  // 页面或弹层滚动时立即隐藏所有 fixed 选框，禁止沿用旧坐标覆盖评论区。
+  // 滚动停止后清空旧帧，再由当前实际媒体区域稳定两帧后重新定位。
   function handleLiveScroll() {
-    if (!activeXhsRecord || activeXhsRecord.isLiveVideo !== true) return;
+    if (!activeXhsRecord) return;
     livePageScrolling = true;
     hideLiveVisualsDuringScroll();
     if (liveScrollTimer) clearTimeout(liveScrollTimer);
@@ -687,13 +722,13 @@
       return;
     }
     if (pluginEnabled && pageType() === "note" && activeXhsElement && activeXhsElement.isConnected) {
+      if (livePageScrolling) {
+        hideLiveVisualsDuringScroll();
+        requestAnimationFrame(animationSync);
+        return;
+      }
       var box = activeXhsElement.getBoundingClientRect();
       if (activeXhsRecord && activeXhsRecord.isLiveVideo === true) {
-        if (livePageScrolling) {
-          hideLiveVisualsDuringScroll();
-          requestAnimationFrame(animationSync);
-          return;
-        }
         var visibleLivePage = currentSlideIndex(true);
         if (visibleLivePage > 0 && activeXhsRecord.slideIndex > 0 && activeXhsRecord.slideIndex !== visibleLivePage) {
           activeXhsMotionStable = false;
@@ -786,6 +821,13 @@
     }
     var element = liveSelection ? liveSelection.element : bestVisibleElement();
     var record = liveSelection ? liveSelection.record : recordForElement(element);
+    // 普通图片进入带百分比缩放工具栏的放大查看器后不展示选框；
+    // 视频和 Live 继续沿用原有逻辑。关闭放大层后定时扫描会自动恢复。
+    if (record && record.mediaType === "image" && imageZoomViewerOpen()) {
+      decorate(null, null);
+      updateCount();
+      return;
+    }
     // 当前页已经确认是 Live，但宿主或媒体节点还在轮播切换中时直接隐藏，
     // 禁止回退到全局候选并误用上一页/预加载节点。
     if (!liveSelection && livePageRecord) {

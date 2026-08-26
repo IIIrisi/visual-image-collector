@@ -372,7 +372,7 @@
     if (!pluginEnabledState) { showUnsupported("插件已关闭"); return; }
     btnToggleWorkSelection.style.display = "none";
     if (currentSite === "pinterest") {
-      showReady(pageType === "pin" ? "采集本页图片" : "加入待下载");
+      showReady("加入待下载");
     } else if (currentSite === "zcool") {
       if (pageType === "work") { showReady("加入待下载"); btnToggleWorkSelection.textContent = workSelectionEnabled ? "取消选择此作品的全部图片" : "重新选择此作品的全部图片"; btnToggleWorkSelection.style.display = "block"; }
       else showUnsupported("请进入作品详情页采集");
@@ -394,9 +394,9 @@
     } else if (pageType === "search") {
       showReady("加入待下载");
     } else if (pageType === "pin") {
-      showReady("采集本页 + 推荐图片");
+      showReady("加入待下载");
     } else {
-      showReady("采集图片");
+      showReady("加入待下载");
     }
   }
 

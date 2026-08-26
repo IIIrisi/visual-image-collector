@@ -112,9 +112,46 @@
     return { original: fallback.replace(/\/\d+x\//, "/originals/"), fallback: fallback };
   }
 
+  // 主页和 Pin 详情页的推荐瀑布流共用同一套卡片解析。
+  // Pinterest 新版 DOM 中链接有时包住图片，有时才位于 pinWrapper 内部。
+  function pinLinkForImage(img) {
+    var directLink = img.closest('a[href*="/pin/"]');
+    if (directLink) return directLink;
+    var context = img.closest('[data-test-id="pinWrapper"]') || img.closest('div[data-grid-item]');
+    return context && context.querySelector('a[href*="/pin/"]');
+  }
+
+  // Overlay 必须挂在能容纳子节点的可见容器上。Pinterest 有时会把
+  // data-test-id 直接放在 img 上；把 div 追加到 img/picture 内部虽不一定报错，
+  // 但浏览器不会正常渲染选框。
+  function overlayHostForImage(img, preferredHost) {
+    var host = preferredHost;
+    while (host && (host === img || /^(IMG|PICTURE|SOURCE)$/i.test(host.tagName || ""))) {
+      host = host.parentElement;
+    }
+    if (!host || host === document.body) return null;
+    if (typeof host.contains === "function" && !host.contains(img)) return null;
+    return host;
+  }
+
+  function pinCardForImage(img, link) {
+    // 选框必须挂到真正包住图片的可见节点；这也是主页卡片最稳定的锚点。
+    if (link && link.contains(img)) return overlayHostForImage(img, link);
+    return overlayHostForImage(img,
+      img.closest('[data-test-id="pinWrapper"]') || img.closest('div[data-grid-item]'));
+  }
+
+  function detailCardForImage(img) {
+    if (!img) return null;
+    // 详情主图先完整复用首页的链接/卡片定位。visual-content-container
+    // 往往包含左右留白、返回键和放大控件，不能作为选框宿主。
+    var homepageCard = pinCardForImage(img, pinLinkForImage(img));
+    if (homepageCard) return homepageCard;
+    return overlayHostForImage(img, img.parentElement);
+  }
+
   function pinIdFor(img, url) {
-    var wrapper = img.closest('[data-test-id="pinWrapper"]') || img.closest('div[data-grid-item]') || img.parentElement;
-    var link = wrapper && wrapper.querySelector('a[href*="/pin/"]');
+    var link = pinLinkForImage(img);
     var match = link && link.href.match(/\/pin\/(\d+)/);
     if (match) return match[1];
     var signature = img.closest("[data-test-image-signature]");
@@ -122,6 +159,70 @@
     var hash = 0;
     for (var i = 0; i < url.length; i++) hash = ((hash << 5) - hash + url.charCodeAt(i)) | 0;
     return "img_" + Math.abs(hash);
+  }
+
+  function detailPinId() {
+    var match = location.pathname.match(/\/pin\/(\d+)/);
+    return match ? match[1] : "";
+  }
+
+  function detailImageCandidate() {
+    var selectors = [
+      '[data-test-id="pin-closeup-image"] img',
+      '[data-test-id="closeup-image"] img',
+      '[data-test-id="visual-content-container"] img',
+      '[data-test-id="pin-image-container"] img',
+      'img[srcset]',
+      'img[src*="pinimg.com"]'
+    ];
+    var candidates = [];
+    var seen = new Set();
+    document.querySelectorAll(selectors.join(",")).forEach(function(img) {
+      if (seen.has(img)) return;
+      seen.add(img);
+      var source = img.currentSrc || img.src || "";
+      if (!/\.pinimg\.com\//.test(source)) return;
+      var width = img.naturalWidth || img.width || 0;
+      var height = img.naturalHeight || img.height || 0;
+      if (width < 180 || height < 180) return;
+      var linkedPin = img.closest('a[href*="/pin/"]');
+      var linkedMatch = linkedPin && linkedPin.href.match(/\/pin\/(\d+)/);
+      if (linkedMatch && linkedMatch[1] !== detailPinId()) return;
+      var explicit = img.closest('[data-test-id*="closeup"], [data-test-id="visual-content-container"], [data-test-id="pin-image-container"]');
+      candidates.push({ img: img, score: width * height + (explicit ? 100000000 : 0) });
+    });
+    candidates.sort(function(a, b) { return b.score - a.score; });
+    return candidates.length ? candidates[0].img : null;
+  }
+
+  function scanDetailPin() {
+    if (pageType() !== "pin") return;
+    var id = detailPinId();
+    if (!id) return;
+    var img = detailImageCandidate();
+    var urls;
+    if (img) {
+      urls = largestUrl(img);
+    } else {
+      var meta = document.querySelector('meta[property="og:image"], meta[name="twitter:image"]');
+      var metaUrl = meta && meta.content || "";
+      if (!/\.pinimg\.com\//.test(metaUrl)) return;
+      urls = { original: metaUrl.replace(/\/\d+x\//, "/originals/"), fallback: metaUrl };
+    }
+    if (!/\.pinimg\.com\//.test(urls.original)) return;
+    // 与主页卡片共用 overlayHostForImage，同时保留详情页主图的独立定位。
+    var card = detailCardForImage(img);
+    var titleMeta = document.querySelector('meta[property="og:title"]');
+    var title = img && img.alt || titleMeta && titleMeta.content || pageTitle();
+    var widthMeta = document.querySelector('meta[property="og:image:width"]');
+    var heightMeta = document.querySelector('meta[property="og:image:height"]');
+    var record = { id: id, url: urls.original, fallbackUrl: urls.fallback, title: title, card: card,
+      detailImage: img || null, promoted: false,
+      width: img ? (img.naturalWidth || img.width) : parseInt(widthMeta && widthMeta.content, 10) || 0,
+      height: img ? (img.naturalHeight || img.height) : parseInt(heightMeta && heightMeta.content, 10) || 0 };
+    pins.set(id, record);
+    if (!selected.has(id)) selected.set(id, selectionMode === "manual" ? manualSelectedPins.has(id) : true);
+    setAppearance(record);
   }
 
   function setAppearance(record) {
@@ -154,7 +255,34 @@
       });
       card.appendChild(badge);
     }
+    syncDetailImageAppearance(record, overlay, badge);
     badge.textContent = selected.get(record.id) === false ? (selectionMode === "manual" ? "" : "\u2717") : "\u2713";
+  }
+
+  function syncDetailImageAppearance(record, overlay, badge) {
+    var img = record.detailImage;
+    var card = record.card;
+    if (!img || !card || !img.getBoundingClientRect || !card.getBoundingClientRect) return;
+    var imageRect = img.getBoundingClientRect();
+    var cardRect = card.getBoundingClientRect();
+    if (imageRect.width <= 0 || imageRect.height <= 0) return;
+    var left = imageRect.left - cardRect.left + (card.scrollLeft || 0);
+    var top = imageRect.top - cardRect.top + (card.scrollTop || 0);
+
+    overlay.classList.add("pinterest-dl-detail-image-layer");
+    overlay.style.left = left + "px";
+    overlay.style.top = top + "px";
+    overlay.style.right = "auto";
+    overlay.style.bottom = "auto";
+    overlay.style.width = imageRect.width + "px";
+    overlay.style.height = imageRect.height + "px";
+    overlay.style.boxSizing = "border-box";
+
+    badge.classList.add("pinterest-dl-detail-image-badge");
+    badge.style.left = Math.max(left, left + imageRect.width - 32) + "px";
+    badge.style.top = Math.max(top, top + imageRect.height - 32) + "px";
+    badge.style.right = "auto";
+    badge.style.bottom = "auto";
   }
 
   function updateCount() {
@@ -172,17 +300,21 @@
 
   function scan() {
     if (!pluginEnabled) return;
+    scanDetailPin();
     document.querySelectorAll('img[srcset], img[src*="pinimg.com"]').forEach(function(img) {
-      var card = img.closest('[data-test-id="pinWrapper"]') || img.closest('div[data-grid-item]');
+      var link = pinLinkForImage(img);
+      var card = pinCardForImage(img, link);
       if (!card || img.width < 120 || img.height < 120) return;
-      if (!card.querySelector('a[href*="/pin/"]')) return;
-      var relatedSearch = card.closest('[data-test-id*="related"], [aria-label*="Related"], [aria-label*="相关搜索"]');
-      if (relatedSearch) return;
+      if (!link) return;
+      var context = img.closest('[data-test-id="pinWrapper"]') || img.closest('div[data-grid-item]') || card;
+      // Pin 详情页的推荐瀑布流通常整体位于 Related/相关容器内。
+      // 这些卡片与主页 Pin 结构一致，不能按容器名过滤；非 Pin 的相关
+      // 搜索词条目本身没有 /pin/ 链接，已会被上面的 !link 条件排除。
       var urls = largestUrl(img);
       if (!/\.pinimg\.com\//.test(urls.original)) return;
       var id = pinIdFor(img, urls.original);
       var title = img.alt || "";
-      var promoted = /promoted|推广|赞助/i.test((card.textContent || ""));
+      var promoted = /promoted|推广|赞助/i.test((context.textContent || ""));
       var record = { id: id, url: urls.original, fallbackUrl: urls.fallback, title: title, card: card, promoted: promoted,
         width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };
       pins.set(id, record);
@@ -322,6 +454,10 @@
   observer = new MutationObserver(scheduleScan);
   observer.observe(document.documentElement, { childList: true, subtree: true });
   window.addEventListener("scroll", scheduleScan, { passive: true });
+  window.addEventListener("resize", scheduleScan, { passive: true });
+  document.addEventListener("load", function(event) {
+    if (event.target && event.target.tagName === "IMG") scheduleScan();
+  }, true);
   scan();
   safeSend({ action: "PAGE_TYPE", pageType: pageType(), site: "pinterest" });
 })();

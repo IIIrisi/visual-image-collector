@@ -87,6 +87,7 @@
   var knownPins = new Map();           // 本次页面已知的 pin 元数据，用于重新过滤
   var filterWork = new Map();          // pin_id -> Promise
   var hydrationWork = new Map();       // 仅有 pin_id 时补全图片元数据
+  var directPinCards = new Map();      // 无 /pins/ 链接的详情页主图容器
   var autoExcludedPins = new Set();    // 仅记录智能过滤造成的取消，关闭时可恢复
   var manualAcceptedPins = new Set();  // 用户手动恢复的过滤图，优先于自动分类
   var manualDeselectedPins = new Set();// 用户主动取消，始终使用灰色状态
@@ -167,11 +168,11 @@
   }
 
   function findPinCard(pid) {
+    var directCard = directPinCards.get(String(pid));
+    if (directCard && document.contains(directCard)) return directCard;
+    if (directCard) directPinCards.delete(String(pid));
     var link = document.querySelector('a[href*="/pins/' + pid + '"]');
-    if (!link) return null;
-    return link.closest('[class*="pin"]') || link.closest('[class*="wfc-item"]') ||
-      link.closest('[class*="waterfall"]') || link.closest('[class*="Card"]') ||
-      link.closest('[class*="card"]') || link.closest('[class*="item"]') || link.parentElement;
+    return findPinCardFromLink(link);
   }
 
   function enrichCopyrightFromCard(pin) {
@@ -590,6 +591,112 @@
   var currentPinId = null;       // 当前 Pin 详情页的 pin_id
   var recommendedPinDataMap = {}; // pin_id → 推荐 pin 完整数据（从 inject.js 或 API 获取）
   var overlayObserver = null;
+  // 花瓣是 SPA；每次路由切换都会让之前页面的延迟任务立即失效。
+  // 否则从首页进入 Pin 页时，两套扫描器会同时改写新页面 DOM。
+  var pageGeneration = 0;
+
+  function isCurrentPage(generation, expectedType) {
+    return generation === pageGeneration && (!expectedType || detectPageType() === expectedType);
+  }
+
+  function findPinCardFromLink(link) {
+    if (!link) return null;
+    // 优先选择花瓣瀑布流的直接卡片。不再使用过于宽泛的
+    // [class*="pin"] / [class*="item"]，它们在 Pin 详情页可能命中整个页面容器。
+    var card = link.closest('[class*="wfc-item"], [class*="waterfall-item"], [class*="PinCard"], [class*="pin-card"], [class*="pinCard"]');
+    if (card) return card;
+
+    var node = link;
+    for (var depth = 0; node && depth < 5; depth++, node = node.parentElement) {
+      if (node !== link && node.querySelectorAll && node.querySelectorAll('a[href*="/pins/"]').length === 1 &&
+          node.querySelector('img, picture, video')) return node;
+    }
+    return link.parentElement && link.parentElement.querySelector('img, picture, video') ? link.parentElement : null;
+  }
+
+  function detailImageActionText(node) {
+    return String(node && node.textContent || "").replace(/\s+/g, "").trim();
+  }
+
+  // Pin 详情页主图上的“复制图片 / 下载图片 / 保存到 Eagle”操作条
+  // 来自“好采助手”的 .hc-huaban-btns 会每 800ms 检查并重新注入。
+  // 不能直接 remove，否则两个扩展会反复删除/重建；保留空宿主并彻底隐藏，
+  // 对未知版本的操作条再使用文字匹配移除作为兜底。
+  function removePinDetailImageActions() {
+    if (detectPageType() !== "pin") return 0;
+    var knownBars = document.querySelectorAll(".hc-huaban-btns");
+    knownBars.forEach(function(node) {
+      node.hidden = true;
+      node.setAttribute("aria-hidden", "true");
+      node.style.setProperty("display", "none", "important");
+    });
+    if (knownBars.length) return knownBars.length;
+
+    var labels = ["复制图片", "下载图片", "保存到Eagle"];
+    var seeds = [];
+    document.querySelectorAll('button, a, [role="button"], span, div').forEach(function(node) {
+      if (labels.indexOf(detailImageActionText(node)) !== -1) seeds.push(node);
+    });
+    var removed = 0;
+    seeds.some(function(seed) {
+      var node = seed;
+      for (var depth = 0; node && node !== document.body && depth < 7; depth++, node = node.parentElement) {
+        var text = detailImageActionText(node);
+        if (labels.every(function(label) { return text.indexOf(label) !== -1; })) {
+          node.remove();
+          removed++;
+          return true;
+        }
+      }
+      return false;
+    });
+    return removed;
+  }
+
+  function findMainPinImage(pin) {
+    var pinId = String(pin && pin.pin_id || "");
+    var fileKey = String(pin && (pin.fileKey || pin.url) || "").split("?")[0].split("/").pop();
+    var candidates = [];
+    document.querySelectorAll('main img[src], main img[srcset], img[src*="hbimg"], img[src*="huabanimg"]').forEach(function(img) {
+      var source = img.currentSrc || img.src || "";
+      if (!/(?:hbimg|huabanimg)/i.test(source)) return;
+      var width = img.naturalWidth || img.width || 0;
+      var height = img.naturalHeight || img.height || 0;
+      if (width < 180 || height < 180) return;
+      var link = img.closest('a[href*="/pins/"]');
+      var match = link && link.href.match(/\/pins\/(\d+)/);
+      if (match && match[1] !== pinId) return;
+      var rect = img.getBoundingClientRect ? img.getBoundingClientRect() : { width: width, height: height };
+      var score = Math.max(width * height, (rect.width || 0) * (rect.height || 0));
+      if (fileKey && source.indexOf(fileKey) !== -1) score += 1000000000;
+      if (!link) score += 100000000;
+      candidates.push({ img: img, score: score });
+    });
+    candidates.sort(function(a, b) { return b.score - a.score; });
+    return candidates.length ? candidates[0].img : null;
+  }
+
+  function mainPinCardForImage(img) {
+    if (!img) return null;
+    var host = img.parentElement;
+    while (host && /^(PICTURE|SOURCE|IMG)$/i.test(host.tagName || "")) host = host.parentElement;
+    return host && host !== document.body ? host : null;
+  }
+
+  function scanVisiblePinOverlays(excludedPinId) {
+    if (!pluginEnabled) return 0;
+    var pins = [];
+    var seen = {};
+    document.querySelectorAll('a[href*="/pins/"]').forEach(function(link) {
+      var match = link.href.match(/\/pins\/(\d+)/);
+      if (!match || match[1] === String(excludedPinId || "") || seen[match[1]]) return;
+      if (!findPinCardFromLink(link)) return;
+      seen[match[1]] = true;
+      if (!recommendedPinDataMap[match[1]]) recommendedPinDataMap[match[1]] = { pin_id: parseInt(match[1]) };
+      pins.push({ pin_id: parseInt(match[1]) });
+    });
+    return pins.length ? addPinOverlays(pins) : 0;
+  }
 
   function setSelectionMode(mode) {
     selectionMode = mode === "manual" ? "manual" : "auto";
@@ -626,10 +733,58 @@
     updateSelectionCount();
   }
 
+  function addPinOverlayToCard(pin, card) {
+    if (!pin || !card) return 0;
+    var pid = String(pin.pin_id);
+    directPinCards.set(pid, card);
+    if (card.classList.contains("huaban-dl-card")) return 0;
+
+    // 首页、搜索、画板和详情主图共用完全相同的选中状态。
+    var isSelected;
+    if (pinSelectionState.has(pid)) isSelected = pinSelectionState.get(pid);
+    else {
+      isSelected = selectionMode === "manual" ? manualSelectedPins.has(pid) : defaultSelectionState;
+      pinSelectionState.set(pid, isSelected);
+    }
+    card.classList.add("huaban-dl-card");
+    card.classList.add(isSelected ? "huaban-dl-selected" : "huaban-dl-deselected");
+
+    var overlay = document.createElement("div");
+    overlay.className = "huaban-dl-overlay";
+    card.style.position = "relative";
+    card.appendChild(overlay);
+
+    var badge = document.createElement("div");
+    badge.className = "huaban-dl-badge";
+    badge.textContent = isSelected ? "\u2713" : (selectionMode === "manual" ? "" : "\u2717");
+    badge.dataset.pinId = pid;
+    card.appendChild(badge);
+
+    badge.addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleCardSelection(card, badge, pid);
+    });
+    card.addEventListener("contextmenu", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleCardSelection(card, badge, pid);
+    });
+
+    knownPins.set(pid, pin);
+    setCardFilterAppearance(pid);
+    schedulePinClassification(pin);
+    return 1;
+  }
+
+  function addMainPinOverlay(pin) {
+    if (!pluginEnabled || !pin || detectPageType() !== "pin") return 0;
+    var img = findMainPinImage(pin);
+    return addPinOverlayToCard(pin, mainPinCardForImage(img));
+  }
+
   function addPinOverlays(pins) {
     if (!pluginEnabled) return 0;
-    // 找到页面上的 Pin 卡片元素
-    // 花瓣的瀑布流卡片包含 <a href="/pins/{id}"> 链接
     var cardElements = document.querySelectorAll('a[href*="/pins/"]');
     var hrefMap = {};
 
@@ -637,67 +792,15 @@
       var match = a.href.match(/\/pins\/(\d+)/);
       if (match) {
         var pid = match[1];
-        // 找到包含这个链接的卡片容器
-        var card = a.closest('[class*="pin"]') ||
-                   a.closest('[class*="wfc-item"]') ||
-                   a.closest('[class*="waterfall"]') ||
-                   a.closest('[class*="Card"]') ||
-                   a.closest('[class*="card"]') ||
-                   a.closest('[class*="item"]') ||
-                   a.parentElement;
-        if (card && !hrefMap[pid]) {
-          hrefMap[pid] = card;
-        }
+        var card = findPinCardFromLink(a);
+        if (card && !hrefMap[pid]) hrefMap[pid] = card;
       }
     });
 
     var matched = 0;
     pins.forEach(function(pin) {
-      var pid = String(pin.pin_id);
-      var card = hrefMap[pid];
-      if (!card || card.classList.contains("huaban-dl-card")) return;
-
-      // 选中状态：已有记录则保留用户选择（DOM 回收重建场景），否则用默认值
-      var isSelected;
-      if (pinSelectionState.has(pid)) {
-        isSelected = pinSelectionState.get(pid); // 保留用户之前的选择
-      } else {
-        isSelected = selectionMode === "manual" ? manualSelectedPins.has(pid) : defaultSelectionState;
-        pinSelectionState.set(pid, isSelected);
-      }
-      card.classList.add("huaban-dl-card");
-      card.classList.add(isSelected ? "huaban-dl-selected" : "huaban-dl-deselected");
-
-      var overlay = document.createElement("div");
-      overlay.className = "huaban-dl-overlay";
-      card.style.position = "relative";
-      card.appendChild(overlay);
-
-      var badge = document.createElement("div");
-      badge.className = "huaban-dl-badge";
-      badge.textContent = isSelected ? "\u2713" : (selectionMode === "manual" ? "" : "\u2717");
-      badge.dataset.pinId = pid;
-      card.appendChild(badge);
-
-      // 点击角标切换选中（左键和右键都可以）
-      badge.addEventListener("click", function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleCardSelection(card, badge, pid);
-      });
-
-      card.addEventListener("contextmenu", function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleCardSelection(card, badge, pid);
-      });
-
-      setCardFilterAppearance(pid);
-      schedulePinClassification(pin);
-
-      matched++;
+      matched += addPinOverlayToCard(pin, hrefMap[String(pin.pin_id)]);
     });
-
     updateSelectionCount();
     return matched;
   }
@@ -1068,6 +1171,7 @@
 
   // ── 清理覆盖层 ────────────────────────────────
   function cleanup() {
+    pageGeneration++;
     pinSelectionState.clear();
     defaultSelectionState = selectionMode !== "manual"; // 手动模式切页后仍保持待选择
     currentBoardData = null;
@@ -1077,6 +1181,7 @@
     filterResults.clear();
     autoExcludedPins.clear();
     knownPins.clear();
+    directPinCards.clear();
     filterWork.clear();
     hydrationWork.clear();
     if (overlayObserver) { overlayObserver.disconnect(); overlayObserver = null; }
@@ -1137,6 +1242,7 @@
 
   function initPage() {
     if (!pluginEnabled) return;
+    var generation = pageGeneration;
     var pageType = detectPageType();
     console.log("[HUABAN DL] initPage:", pageType, location.href);
     safeSend({ action: "PAGE_TYPE", pageType: pageType });
@@ -1147,10 +1253,10 @@
       // 搜索页：不主动加载，等用户点"采集"时通过 API 加载
       // 但尝试给已渲染的卡片加覆盖层
       setTimeout(function() {
-        tryAddSearchOverlays();
+        if (isCurrentPage(generation, pageType)) tryAddSearchOverlays(generation);
       }, 1000);
     } else if (pageType === "pin") {
-      initPinPage();
+      initPinPage(generation);
     }
   }
 
@@ -1329,12 +1435,18 @@
       });
   }
 
-  function initPinPage() {
+  function initPinPage(generation) {
     // 从 URL 提取 pin_id
     var pinIdMatch = location.pathname.match(/\/pins\/(\d+)/);
     var pinId = pinIdMatch ? pinIdMatch[1] : null;
     currentPinId = pinId;
     console.log("[HUABAN DL] initPinPage, pinId:", pinId);
+    removePinDetailImageActions();
+    [300, 1000, 2500].forEach(function(delay) {
+      setTimeout(function() {
+        if (isCurrentPage(generation, "pin") && currentPinId === pinId) removePinDetailImageActions();
+      }, delay);
+    });
 
     if (!pinId) {
       safeSend({ action: "ERROR", message: "无法识别 Pin ID" });
@@ -1343,28 +1455,35 @@
 
     // 先尝试从 __NEXT_DATA__ 获取（首次加载/刷新后有效）
     extractPageData().then(function(data) {
+      if (!isCurrentPage(generation, "pin") || currentPinId !== pinId) return;
       if (data.error || data.pageType !== "pin") {
         console.log("[HUABAN DL] __NEXT_DATA__ 无 Pin 数据（SPA 跳转），改用 API");
         // 用 API 获取
         fetchPinByApi(pinId).then(function(pinData) {
+          if (!isCurrentPage(generation, "pin") || currentPinId !== pinId) return;
           currentPinData = pinData;
+          addMainPinOverlay(pinData);
           safeSend({
             action: "PIN_INFO",
             text: pinData.text || "图片 " + pinData.pin_id
           });
           // 加载推荐 pin
-          loadRecommendedPins(pinId);
+          loadRecommendedPins(pinId, generation);
         }).catch(function(err) {
+          if (!isCurrentPage(generation, "pin") || currentPinId !== pinId) return;
           console.warn("[HUABAN DL] API 获取 Pin 失败:", err.message, "，2秒后重试...");
           // 重试一次（页面可能还在加载中）
           setTimeout(function() {
+            if (!isCurrentPage(generation, "pin") || currentPinId !== pinId) return;
             fetchPinByApi(pinId).then(function(pinData) {
+              if (!isCurrentPage(generation, "pin") || currentPinId !== pinId) return;
               currentPinData = pinData;
+              addMainPinOverlay(pinData);
               safeSend({
                 action: "PIN_INFO",
                 text: pinData.text || "图片 " + pinData.pin_id
               });
-              loadRecommendedPins(pinId);
+              loadRecommendedPins(pinId, generation);
             }).catch(function(err2) {
               console.warn("[HUABAN DL] 重试也失败:", err2.message);
               safeSend({ action: "ERROR", message: "获取 Pin 数据失败，请刷新重试" });
@@ -1376,6 +1495,7 @@
 
       // __NEXT_DATA__ 有效
       currentPinData = data.pin;
+      addMainPinOverlay(data.pin);
       safeSend({
         action: "PIN_INFO",
         text: data.pin.text || "图片 " + data.pin.pin_id
@@ -1390,7 +1510,7 @@
       }
 
       // 加载推荐 pin（DOM 扫描 + 覆盖层）
-      loadRecommendedPins(pinId);
+      loadRecommendedPins(pinId, generation);
     });
   }
 
@@ -1399,43 +1519,25 @@
   // 因为花瓣用虚拟滚动，DOM 元素会被回收重建，
   // 旧的 pinSelectionState 记录还在，但新 DOM 没有覆盖层。
   // 必须让 addPinOverlays 通过 card.classList 检查来判断是否需要重建。
-  function loadRecommendedPins(mainPinId) {
+  function loadRecommendedPins(mainPinId, generation) {
     var scanCount = 0;
     var maxScans = 6; // 最多扫描 6 次（共等约 9 秒）
 
     function scanAndOverlay() {
+      if (!isCurrentPage(generation, "pin") || currentPinId !== mainPinId) return;
       scanCount++;
-      var links = document.querySelectorAll('a[href*="/pins/"]');
-      var pinsToProcess = [];
-      var seen = {};
+      removePinDetailImageActions();
+      addMainPinOverlay(currentPinData);
+      var matched = scanVisiblePinOverlays(mainPinId);
 
-      links.forEach(function(a) {
-        var match = a.href.match(/\/pins\/(\d+)/);
-        if (!match) return;
-        var pid = match[1];
-        if (pid === mainPinId || seen[pid]) return;
-        seen[pid] = true;
-
-        // 注册推荐 pin 数据（如果还没有）
-        if (!recommendedPinDataMap[pid]) {
-          recommendedPinDataMap[pid] = { pin_id: parseInt(pid) };
-        }
-        // 不跳过已在 pinSelectionState 中的 pid！
-        // addPinOverlays 会通过 DOM class 判断是否需要重建覆盖层
-        pinsToProcess.push({ pin_id: parseInt(pid) });
-      });
-
-      if (pinsToProcess.length > 0) {
-        var matched = addPinOverlays(pinsToProcess);
+      if (matched > 0) {
 
         // 统计推荐 pin 总数（排除主 pin）
         var recCount = 0;
         pinSelectionState.forEach(function(v, k) {
           if (k !== mainPinId) recCount++;
         });
-        if (matched > 0 || scanCount <= 2) {
-          safeSend({ action: "RECOMMENDED_COUNT", count: recCount });
-        }
+        safeSend({ action: "RECOMMENDED_COUNT", count: recCount });
       }
 
       // 继续扫描（推荐区域可能是延迟加载的）
@@ -1453,32 +1555,16 @@
       // 去抖动：200ms 内多次变化只触发一次
       clearTimeout(overlayObserver._debounce);
       overlayObserver._debounce = setTimeout(function() {
-        var links = document.querySelectorAll('a[href*="/pins/"]');
-        var pinsToProcess = [];
-        var seen = {};
-
-        links.forEach(function(a) {
-          var match = a.href.match(/\/pins\/(\d+)/);
-          if (!match) return;
-          var pid = match[1];
-          if (pid === mainPinId || seen[pid]) return;
-          seen[pid] = true;
-
-          if (!recommendedPinDataMap[pid]) {
-            recommendedPinDataMap[pid] = { pin_id: parseInt(pid) };
-          }
-          pinsToProcess.push({ pin_id: parseInt(pid) });
-        });
-
-        if (pinsToProcess.length > 0) {
-          var matched = addPinOverlays(pinsToProcess);
-          if (matched > 0) {
-            var recCount = 0;
-            pinSelectionState.forEach(function(v, k) {
-              if (k !== mainPinId) recCount++;
-            });
-            safeSend({ action: "RECOMMENDED_COUNT", count: recCount });
-          }
+        if (!isCurrentPage(generation, "pin") || currentPinId !== mainPinId) return;
+        removePinDetailImageActions();
+        addMainPinOverlay(currentPinData);
+        var matched = scanVisiblePinOverlays(mainPinId);
+        if (matched > 0) {
+          var recCount = 0;
+          pinSelectionState.forEach(function(v, k) {
+            if (k !== mainPinId) recCount++;
+          });
+          safeSend({ action: "RECOMMENDED_COUNT", count: recCount });
         }
       }, 200);
     });
@@ -1487,27 +1573,16 @@
   }
 
   // 搜索页：尝试给已渲染的卡片加覆盖层（不加载 API 数据，只是标记 DOM）
-  function tryAddSearchOverlays() {
-    if (!pluginEnabled) return;
-    var cardElements = document.querySelectorAll('a[href*="/pins/"]');
-    var fakePins = [];
-    var seen = {};
-    cardElements.forEach(function(a) {
-      var match = a.href.match(/\/pins\/(\d+)/);
-      if (match && !seen[match[1]]) {
-        seen[match[1]] = true;
-        fakePins.push({ pin_id: parseInt(match[1]) });
-      }
-    });
-    if (fakePins.length > 0) {
-      addPinOverlays(fakePins);
-    }
+  function tryAddSearchOverlays(generation) {
+    var pageType = detectPageType();
+    if (!pluginEnabled || !isCurrentPage(generation, pageType) || (pageType !== "home" && pageType !== "search")) return;
+    scanVisiblePinOverlays(null);
 
     // 监听 DOM 变化（无限滚动），带去抖防卡顿
     if (!overlayObserver) {
       overlayObserver = new MutationObserver(function() {
         clearTimeout(overlayObserver._debounce);
-        overlayObserver._debounce = setTimeout(tryAddSearchOverlays, 300);
+        overlayObserver._debounce = setTimeout(function() { tryAddSearchOverlays(generation); }, 300);
       });
       var container = document.querySelector('[class*="waterfall"]') ||
                       document.querySelector('main') ||

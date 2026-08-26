@@ -160,11 +160,30 @@ test("Live badge uses the normal pointer cursor without hover scaling and a stab
     "ordinary image and video badges must keep their existing hover behavior");
 });
 
+test("Xiaohongshu hides the injected Eagle import button without removing its reinjection guard", () => {
+  assert.match(overlayStyle, /\.hc-eagle-btn\s*\{[\s\S]*?display:\s*none\s*!important[\s\S]*?pointer-events:\s*none\s*!important/);
+});
+
 test("Live fixed visuals hide during page scrolling and are rebound only after scrolling stops", () => {
   assert.match(source, /function handleLiveScroll\(\)[\s\S]*?livePageScrolling = true;[\s\S]*?hideLiveVisualsDuringScroll\(\)/);
+  assert.match(source, /function handleLiveScroll\(\)[\s\S]*?if \(!activeXhsRecord\) return/);
   assert.match(source, /liveScrollTimer = setTimeout\(function\(\) \{[\s\S]*?activeXhsLiveFrame = null;[\s\S]*?activeXhsMotionStable = false;[\s\S]*?scheduleScan\(\)/);
   assert.match(source, /if \(livePageScrolling\) \{[\s\S]*?hideLiveVisualsDuringScroll\(\);[\s\S]*?requestAnimationFrame\(animationSync\)/);
   assert.match(source, /document\.addEventListener\("scroll", handleLiveScroll, true\)/);
+});
+
+test("Xiaohongshu never binds note selection visuals to comments or unknown page images", () => {
+  assert.match(source, /function matchesKnownNoteMedia\(element\)/);
+  assert.match(source, /if \(!element \|\| !detailRoot \|\| !matchesKnownNoteMedia\(element\)\) return false/);
+  assert.match(source, /element\.closest\('\[class\*="comment" i\][\s\S]*?\[class\*="interaction" i\]'/);
+  assert.doesNotMatch(source, /\[class\*="mask"\], main/);
+});
+
+test("Xiaohongshu keeps actual image bounds and hides image-only zoom viewer selection", () => {
+  assert.match(source, /function imageZoomViewerOpen\(\)/);
+  assert.match(source, /\^\\s\*\\d\{1,3\}%\\s\*\$/);
+  assert.match(source, /record && record\.mediaType === "image" && imageZoomViewerOpen\(\)[\s\S]*?decorate\(null, null\)/);
+  assert.doesNotMatch(source, /usesZoomViewerGeometry/);
 });
 
 test("Xiaohongshu outline keeps the 1.8.8 implementation without the 1.8.9 header clipping layer", () => {

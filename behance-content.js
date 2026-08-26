@@ -185,16 +185,48 @@
     var badge = host.querySelector(":scope > .huaban-dl-badge[data-behance-id]");
     if (!badge) {
       badge = document.createElement("div"); badge.className = "huaban-dl-badge";
-      badge.dataset.behanceId = record.id; host.appendChild(badge);
+      host.appendChild(badge);
     }
-    badge.textContent = choose ? "✓" : (selectionMode === "manual" ? "" : "✗");
-    badge.onclick = function(event) {
-      event.preventDefault(); event.stopPropagation();
-      var choose = selected.get(record.id) === false;
-      selected.set(record.id, choose);
-      if (selectionMode === "manual") { if (choose) manualSelected.add(record.id); else manualSelected.delete(record.id); }
-      decorate(record); lastSelectionMessage = ""; updateCount();
-    };
+    badge.dataset.behanceId = record.id;
+    var badgeText = choose ? "✓" : (selectionMode === "manual" ? "" : "✗");
+    // textContent 赋值会产生 childList 变化；扫描时反复写入相同文本
+    // 会让 MutationObserver 每 80ms 再次扫描，造成手动勾选图标频闪。
+    if (badge.textContent !== badgeText) badge.textContent = badgeText;
+    if (badge.dataset.behanceBound !== "1") {
+      badge.dataset.behanceBound = "1";
+      badge.addEventListener("click", function(event) {
+        event.preventDefault(); event.stopPropagation();
+        var id = badge.dataset.behanceId;
+        var current = records.get(id);
+        if (!current) return;
+        var nextChoose = selected.get(id) === false;
+        selected.set(id, nextChoose);
+        if (selectionMode === "manual") { if (nextChoose) manualSelected.add(id); else manualSelected.delete(id); }
+        decorate(current); lastSelectionMessage = ""; updateCount();
+      });
+    }
+  }
+
+  function isCollectorUiNode(node) {
+    if (!node) return false;
+    if (node.nodeType === 3) node = node.parentElement;
+    return !!(node && node.nodeType === 1 && node.matches &&
+      node.matches(".huaban-dl-overlay, .huaban-dl-badge, .huaban-dl-filter-reason"));
+  }
+
+  function mutationNeedsScan(mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      var mutation = mutations[i];
+      if (mutation.type === "attributes") return true;
+      var target = mutation.target && mutation.target.nodeType === 1 ? mutation.target : mutation.target && mutation.target.parentElement;
+      if (target && target.closest && target.closest(".huaban-dl-badge, .huaban-dl-overlay")) continue;
+      var added = Array.from(mutation.addedNodes || []);
+      var removed = Array.from(mutation.removedNodes || []);
+      // 自己创建选框时不再反向触发扫描；Behance 删除旧选框时则需重建。
+      if (removed.length > 0) return true;
+      if (added.some(function(node) { return !isCollectorUiNode(node); })) return true;
+    }
+    return false;
   }
 
   function bodyMedia(doc) {
@@ -327,11 +359,12 @@
     document.documentElement.classList.toggle("huaban-dl-plugin-disabled", !pluginEnabled);
     scan(); ensureCompleteCatalog();
   });
-  new MutationObserver(function() {
+  new MutationObserver(function(mutations) {
+    if (!mutationNeedsScan(mutations)) return;
     if (scanTimer) return;
     scanTimer = setTimeout(function() { scanTimer = null; scan(); }, 80);
   }).observe(document.documentElement, { childList: true, subtree: true, attributes: true,
-    attributeFilter: ["src", "srcset", "data-src", "class"] });
+    attributeFilter: ["src", "srcset", "data-src"] });
   document.addEventListener("load", function(event) { if (event.target && event.target.tagName === "IMG") scan(); }, true);
   safeSend({ action: "PAGE_TYPE", pageType: pageType(), site: "behance" });
 })();

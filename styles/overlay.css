@@ -1,5 +1,21 @@
 /* ── Huaban Downloader 选中覆盖层样式 ── */
 
+/* 花瓣 Pin 主图上由“好采助手”注入的复制/下载/Eagle 操作条。
+   保留隐藏宿主可阻止对方扩展每 800ms 再次创建，避免反复闪现。 */
+.hc-huaban-btns {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* 小红书图片左上角由“好采助手”注入的“导入 Eagle”按钮。
+   只隐藏 Eagle 项并保留 .hc-btn-wrapper，阻止对方扩展重复创建整组按钮。 */
+.hc-eagle-btn {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 html.huaban-dl-plugin-disabled .huaban-dl-overlay,
 html.huaban-dl-plugin-disabled .huaban-dl-badge,
 html.huaban-dl-plugin-disabled .zcool-dl-image-layer,
@@ -126,6 +142,31 @@ html.huaban-dl-manual-mode .xhs-dl-fixed-badge.is-deselected {
 .huaban-dl-card.huaban-dl-deselected > .zcool-dl-image-layer {
   border: 3px solid transparent;
   background: rgba(0, 0, 0, 0.35);
+}
+
+/* 站酷的正文/放大预览可能让多张图片共用同一父容器。
+   选择状态绑定到每个素材自己的层，避免父容器最后一次状态覆盖其他图片。 */
+.huaban-dl-card > .zcool-dl-image-layer.zcool-dl-selected {
+  border: 3px solid #22c55e !important;
+  background: transparent !important;
+}
+.huaban-dl-card > .zcool-dl-image-layer.zcool-dl-deselected {
+  border: 3px solid transparent !important;
+  background: rgba(0, 0, 0, 0.35) !important;
+}
+.huaban-dl-card > .zcool-dl-badge.zcool-dl-selected {
+  color: #fff !important;
+  background: #22c55e !important;
+  border: 0 !important;
+}
+html.huaban-dl-manual-mode .huaban-dl-card > .zcool-dl-image-layer.zcool-dl-deselected {
+  border-color: #22c55e !important;
+  background: transparent !important;
+}
+html.huaban-dl-manual-mode .huaban-dl-card > .zcool-dl-badge.zcool-dl-deselected {
+  color: transparent !important;
+  background: rgba(255,255,255,.88) !important;
+  border: 2px solid #22c55e !important;
 }
 
 /* 小红书详情轮播：轮廓直接画在当前媒体上，和站点轮播共用合成层，滑动不拖影。 */

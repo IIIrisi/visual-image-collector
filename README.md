@@ -5,7 +5,7 @@
 # Aesthetic Image Collector
 
 <p align="center">
-  <strong>审美图采集助手 · v1.8.10</strong><br>
+  <strong>审美图采集助手 · v2.0.0</strong><br>
   A local-first Chrome extension for collecting images, GIFs, and videos from visual-reference platforms.
 </p>
 
@@ -17,12 +17,12 @@ The extension supports Huaban, Pinterest, ZCOOL, Xiaohongshu, and Behance. Selec
 
 > This repository contains extension source code only. It includes no account credentials, browser profiles, collected media, or private-board data.
 
-## What's new in v1.8.10
+## What's new in v2.0.0
 
-- Restored the Xiaohongshu selection runtime to the proven v1.8.8 behavior. The v1.8.9 top-bar visual cropping change has been removed, so Live, image, and regular-video selection boxes no longer inherit that experimental adjustment.
-- Behance Vimeo downloads still prefer the highest progressive MP4 exposed by the player.
-- When Vimeo exposes HLS only, the extension now parses the master playlist, chooses the highest-quality variant, and merges its initialization segment and ordered fMP4 fragments into an MP4 download.
-- Behance GIF handling, the pending queue, ZIP export, deduplication, and the other site adapters remain compatible with v1.8.9.
+- Added main-image recognition and image-level selection to Huaban Pin detail pages, using the same recognition logic as the home feed.
+- Added main-image recognition and image-level selection to Pinterest Pin detail pages, using the same recognition logic as the home feed.
+- Pin detail main images and recommendations now share the same automatic and manual selection behavior.
+- Fixed some bugs.
 
 See [CHANGELOG.md](CHANGELOG.md) for the complete version history.
 

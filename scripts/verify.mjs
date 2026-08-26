@@ -47,7 +47,7 @@ check(overlayStyle.includes(".zcool-dl-overlay-host") && overlayStyle.includes("
 check(!overlayStyle.includes("top: 8px;\n  right: 8px;\n  bottom: auto;"), "ZCOOL badge must share Huaban bottom-right positioning");
 check(!zcoolScript.includes("rect.width >= 500"), "ZCOOL header ads must not pass a large-image fallback");
 check(zcoolScript.includes('overlay.className = "huaban-dl-overlay zcool-dl-image-layer"'), "ZCOOL must reuse the Huaban overlay structure");
-check(zcoolScript.includes('host.querySelector(":scope > .huaban-dl-badge[data-zcool-id]")'), "ZCOOL must reuse the Huaban badge structure");
+check(zcoolScript.includes('directCollectorChild(host, "huaban-dl-badge", record.id)'), "ZCOOL must reuse an independent Huaban badge per media id");
 check(zcoolScript.includes("ensureCompleteCatalog()"), "ZCOOL full-work lazy-image recovery is missing");
 check(zcoolScript.includes('var completeCatalog = new Map()'), "ZCOOL complete body-image catalog is missing");
 check(!zcoolScript.includes("contentAncestor && width >= 300"), "ZCOOL broad content-size fallback must stay disabled");
@@ -57,11 +57,13 @@ check(popup.includes('id="pluginEnabled"'), "popup plugin master switch is missi
 check(popup.includes('id="btnToggleWorkSelection"'), "ZCOOL whole-work selection toggle is missing");
 check(popup.includes('href="https://my.feishu.cn/share/base/form/shrcn8255GH50XpGieGHbjmDiab?from=navigation"'), "feedback footer URL is missing");
 check(popup.includes("问题反馈</a>"), "feedback footer label is missing");
-check(popupScript.includes('showReady("加入待下载")') && popupScript.includes('? "采集本页图片" : "加入待下载"'), "add-to-pending button label is missing");
+check(popupScript.includes('showReady("加入待下载")') && !popupScript.includes('showReady("采集图片")') && !popupScript.includes('"采集本页图片"'), "unified add-to-pending button label is missing");
 check(popupScript.includes("filter-dot-normal") && popupScript.includes("filter-dot-suspicious") && popupScript.includes("filter-dot-rejected") && popupScript.includes("filter-dot-manual"), "filter status color legend is missing");
 check(popupScript.includes("手动排除 ") && popupScript.includes("stats.manualExcluded"), "manual-exclusion counter is missing");
 check(huabanScript.includes("stats.manualExcluded++") && huabanScript.includes("stats.accepted++"), "Huaban live filter-state totals are missing");
 check(pinterestScript.includes("manualExcluded: manualCount"), "Pinterest live manual-exclusion total is missing");
+check(pinterestScript.includes("scanDetailPin()") && pinterestScript.includes("detailImageCandidate()"), "Pinterest pin-detail main-image recognition is missing");
+check(pinterestScript.includes("pinLinkForImage(img)") && pinterestScript.includes("pinCardForImage(img, link)"), "Pinterest shared home/detail card recognition is missing");
 check(zcoolScript.includes("manualExcluded: manualCount"), "ZCOOL live manual-exclusion total is missing");
 check(zcoolScript.includes('msg.action === "SET_WORK_SELECTION"'), "ZCOOL whole-work selection handler is missing");
 check(zcoolScript.includes('action: "WORK_SELECTION_EMPTY"'), "ZCOOL empty-selection state is missing");
